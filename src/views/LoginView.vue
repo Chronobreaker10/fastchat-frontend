@@ -1,13 +1,13 @@
 <script setup>
 import { reactive, ref } from "vue";
 import { RouterLink, useRouter } from "vue-router";
-import { login } from "../api/mockApi";
+import { authApi } from "../api/auth";
 import { setCurrentUser } from "../store/session";
 
 const router = useRouter();
 const form = reactive({
   username: "",
-  password: ""
+  password: "",
 });
 const isSubmitting = ref(false);
 const errorMessage = ref("");
@@ -16,7 +16,11 @@ async function onSubmit() {
   isSubmitting.value = true;
   errorMessage.value = "";
   try {
-    const user = await login(form.username, form.password);
+    await authApi.login({
+      username: form.username,
+      password: form.password,
+    });
+    const user = await authApi.getCurrentUser();
     setCurrentUser(user);
     router.push("/chats");
   } catch (error) {

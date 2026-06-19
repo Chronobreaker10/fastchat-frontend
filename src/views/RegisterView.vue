@@ -1,23 +1,52 @@
 <script setup>
 import { reactive, ref } from "vue";
 import { RouterLink, useRouter } from "vue-router";
-import { register } from "../api/mockApi";
 import { setCurrentUser } from "../store/session";
+import { authApi } from "../api/auth";
 
 const router = useRouter();
 const form = reactive({
   username: "",
   password: "",
-  repeatPassword: ""
+  repeatPassword: "",
 });
 const isSubmitting = ref(false);
 const errorMessage = ref("");
 
 async function onSubmit() {
-  isSubmitting.value = true;
   errorMessage.value = "";
+  const trimmed = form.username.trim();
+  if (!trimmed) {
+    errorMessage.value = "Username is required.";
+    return;
+  }
+  if (trimmed.length < 3) {
+    errorMessage.value = "Username must contain at least 3 characters.";
+    return;
+  }
+  if (trimmed.length > 100) {
+    errorMessage.value = "Username must not exceed 100 characters.";
+    return;
+  }
+  if (form.password.length < 5) {
+    errorMessage.value = "Password must contain at least 5 characters.";
+    return;
+  }
+  if (form.password.length > 100) {
+    errorMessage.value = "Password must not exceed 100 characters.";
+    return;
+  }
+  if (form.password !== form.repeatPassword) {
+    errorMessage.value = "Passwords do not match.";
+    return;
+  }
+  isSubmitting.value = true;
   try {
-    const user = await register(form.username, form.password, form.repeatPassword);
+    await authApi.register({
+      username: form.username,
+      password: form.password,
+    });
+    const user = await authApi.getCurrentUser();
     setCurrentUser(user);
     router.push("/chats");
   } catch (error) {

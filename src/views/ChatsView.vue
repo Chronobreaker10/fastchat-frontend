@@ -4,6 +4,8 @@ import { RouterLink, useRouter } from "vue-router";
 import { clearCurrentUser, sessionState } from "../store/session";
 import { createChat, getChatsForUser } from "../api/mockApi";
 import { formatDateTime } from "../utils/format";
+import { authApi } from "../api/auth";
+import { chatApi } from "../api/chats";
 
 const router = useRouter();
 const chats = ref([]);
@@ -13,7 +15,9 @@ const createError = ref("");
 const createLoading = ref(false);
 const createForm = reactive({ title: "" });
 
-const username = computed(() => sessionState.currentUser?.username ?? "unknown");
+const username = computed(
+  () => sessionState.currentUser?.username ?? "unknown",
+);
 const currentUserId = computed(() => sessionState.currentUser?.id ?? "");
 
 async function loadChats() {
@@ -23,7 +27,7 @@ async function loadChats() {
   loading.value = true;
   errorMessage.value = "";
   try {
-    chats.value = await getChatsForUser(currentUserId.value);
+    chats.value = await chatApi.getMyChats();
   } catch (error) {
     errorMessage.value = error.message;
   } finally {
@@ -32,12 +36,25 @@ async function loadChats() {
 }
 
 async function onCreateChat() {
-  createLoading.value = true;
   createError.value = "";
+  if (!createForm.title) {
+    createError.value = "Name is required.";
+    return;
+  }
+  if (createForm.title.length < 3) {
+    createError.value = "Name must contain at least 3 characters.";
+    return;
+  }
+  if (createForm.title.length > 100) {
+    createError.value = "Name must not exceed 100 characters.";
+    return;
+  }
+  createLoading.value = true;
   try {
-    const chat = await createChat(currentUserId.value, createForm.title);
+    const chat = await chatApi.create({ name: createForm.title });
     createForm.title = "";
-    router.push(`/chats/${chat.id}`);
+    await loadChats();
+    // router.push(`/chats/${chat.id}`);
   } catch (error) {
     createError.value = error.message;
   } finally {
@@ -45,9 +62,17 @@ async function onCreateChat() {
   }
 }
 
-function logout() {
-  clearCurrentUser();
-  router.push("/login");
+async function logout() {
+  if (!sessionState.currentUser) {
+    return;
+  }
+  try {
+    clearCurrentUser();
+    await authApi.logout();
+    router.push("/login");
+  } catch (error) {
+    errorMessage.value = error.message;
+  }
 }
 
 onMounted(loadChats);
@@ -66,7 +91,13 @@ onMounted(loadChats);
     <section class="card create-chat">
       <h2>Create chat</h2>
       <form @submit.prevent="onCreateChat" class="inline-form">
-        <input v-model="createForm.title" placeholder="Chat title" required />
+        <input
+          v-model="createForm.title"
+          placeholder="Chat title"
+          required
+          minlength="3"
+          maxlength="100"
+        />
         <button :disabled="createLoading" type="submit">
           {{ createLoading ? "Creating..." : "Create" }}
         </button>
@@ -77,7 +108,9 @@ onMounted(loadChats);
     <section class="card">
       <div class="section-header">
         <h2>Chats list</h2>
-        <button class="secondary" :disabled="loading" @click="loadChats">Refresh</button>
+        <button class="secondary" :disabled="loading" @click="loadChats">
+          Refresh
+        </button>
       </div>
       <p v-if="loading">Loading chats...</p>
       <p v-else-if="errorMessage" class="error">{{ errorMessage }}</p>
@@ -87,17 +120,17 @@ onMounted(loadChats);
         <li v-for="chat in chats" :key="chat.id" class="chat-list-item">
           <RouterLink :to="`/chats/${chat.id}`" class="chat-link">
             <div class="chat-title-row">
-              <strong>{{ chat.title }}</strong>
-              <span class="meta">{{ chat.participantCount }} participants</span>
+              <strong>{{ chat.name }}</strong>
             </div>
-            <p v-if="chat.lastMessage" class="last-message">
-              {{ chat.lastMessage.authorUsername }}: {{ chat.lastMessage.text }}
+            <p v-if="chat.last_message" class="last-message">
+              {{ chat.last_message.sender_username }}:
+              {{ chat.last_message.text }}
             </p>
             <p v-else class="last-message">No messages yet.</p>
             <p class="meta">
               {{
-                chat.lastMessage
-                  ? formatDateTime(chat.lastMessage.createdAt)
+                chat.last_message
+                  ? formatDateTime(chat.last_message.created_at)
                   : "No activity"
               }}
             </p>

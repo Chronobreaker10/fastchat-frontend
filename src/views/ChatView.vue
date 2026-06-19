@@ -1,5 +1,13 @@
 <script setup>
-import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from "vue";
+import {
+  computed,
+  nextTick,
+  onMounted,
+  onUnmounted,
+  reactive,
+  ref,
+  watch,
+} from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import {
   addParticipant,
@@ -9,10 +17,11 @@ import {
   getChatMessages,
   leaveChat,
   removeParticipant,
-  sendMessage
+  sendMessage,
 } from "../api/mockApi";
 import { clearCurrentUser, sessionState } from "../store/session";
 import { formatDateTime } from "../utils/format";
+import { chatApi } from "../api/chats";
 
 const SCROLL_LOAD_THRESHOLD = 80;
 
@@ -52,7 +61,10 @@ const participantsExpanded = ref(false);
 
 const currentUser = computed(() => sessionState.currentUser);
 const isOwner = computed(
-  () => chat.value && currentUser.value && chat.value.ownerId === currentUser.value.id
+  () =>
+    chat.value &&
+    currentUser.value &&
+    chat.value.ownerId === currentUser.value.id,
 );
 
 function waitForPaint() {
@@ -94,7 +106,7 @@ async function loadInitialMessages() {
   try {
     const { messages: page, hasMore } = await getChatMessages(
       route.params.id,
-      currentUser.value.id
+      currentUser.value.id,
     );
     messages.value = page;
     hasMoreOlder.value = hasMore;
@@ -131,7 +143,7 @@ async function loadOlderMessages() {
     const { messages: page, hasMore } = await getChatMessages(
       route.params.id,
       currentUser.value.id,
-      { before: oldestId }
+      { before: oldestId },
     );
     messages.value = [...page, ...messages.value];
     hasMoreOlder.value = hasMore;
@@ -167,7 +179,7 @@ function setupLoadMoreObserver() {
         loadOlderMessages();
       }
     },
-    { root, rootMargin: "0px", threshold: 0 }
+    { root, rootMargin: "0px", threshold: 0 },
   );
   loadMoreObserver.observe(sentinel);
 }
@@ -186,7 +198,8 @@ function onMessagesScroll(event) {
 }
 
 async function loadChatMeta() {
-  chat.value = await getChatDetails(route.params.id, currentUser.value.id);
+  //chat.value = await getChatDetails(route.params.id, currentUser.value.id);
+  chat.value = await chatApi.getChat(route.params.id);
 }
 
 async function loadChat() {
@@ -198,23 +211,27 @@ async function loadChat() {
   teardownLoadMoreObserver();
   chat.value = null;
 
-  try {
-    await loadChatMeta();
-    loading.value = false;
-    await nextTick();
-    await loadInitialMessages();
-  } catch (error) {
-    errorMessage.value = error.message;
-    chat.value = null;
-    loading.value = false;
-  }
+  //try {
+  await loadChatMeta();
+  loading.value = false;
+  await nextTick();
+  await loadInitialMessages();
+  // } catch (error) {
+  //   errorMessage.value = error.message;
+  //   chat.value = null;
+  //   loading.value = false;
+  // }
 }
 
 async function onSendMessage() {
   sendLoading.value = true;
   sendError.value = "";
   try {
-    const sent = await sendMessage(chat.value.id, currentUser.value.id, messageText.value);
+    const sent = await sendMessage(
+      chat.value.id,
+      currentUser.value.id,
+      messageText.value,
+    );
     messageText.value = "";
     messages.value = [...messages.value, sent];
     await scrollToBottom();
@@ -229,7 +246,11 @@ async function onAddParticipant() {
   participantLoading.value = true;
   participantError.value = "";
   try {
-    await addParticipant(chat.value.id, currentUser.value.id, participantForm.username);
+    await addParticipant(
+      chat.value.id,
+      currentUser.value.id,
+      participantForm.username,
+    );
     participantForm.username = "";
     await loadChatMeta();
   } catch (error) {
@@ -291,7 +312,10 @@ async function onKickParticipant(participantId) {
   } catch (error) {
     kickError.value = error.message;
   } finally {
-    kickLoadingById.value = { ...kickLoadingById.value, [participantId]: false };
+    kickLoadingById.value = {
+      ...kickLoadingById.value,
+      [participantId]: false,
+    };
   }
 }
 
@@ -306,7 +330,7 @@ watch(
     if (currentUser.value) {
       loadChat();
     }
-  }
+  },
 );
 
 watch(hasMoreOlder, (hasMore) => {
@@ -324,7 +348,9 @@ onUnmounted(teardownLoadMoreObserver);
 <template>
   <div class="page chat-page">
     <header class="topbar card">
-      <RouterLink class="secondary link-button" to="/chats">Back to chats</RouterLink>
+      <RouterLink class="secondary link-button" to="/chats"
+        >Back to chats</RouterLink
+      >
       <div class="topbar-actions">
         <span class="username">{{ currentUser?.username }}</span>
         <button class="secondary" @click="logout">Logout</button>
@@ -346,35 +372,68 @@ onUnmounted(teardownLoadMoreObserver);
           class="messages-scroll"
           @scroll.passive="onMessagesScroll"
         >
-          <div v-if="hasMoreOlder && initialScrollDone" class="messages-scroll-top">
-            <p v-if="loadingOlder" class="messages-load-more">Loading older messages...</p>
-            <p v-else class="messages-load-more meta">Scroll up for older messages</p>
-            <div ref="loadMoreSentinelRef" class="load-more-sentinel" aria-hidden="true" />
+          <div
+            v-if="hasMoreOlder && initialScrollDone"
+            class="messages-scroll-top"
+          >
+            <p v-if="loadingOlder" class="messages-load-more">
+              Loading older messages...
+            </p>
+            <p v-else class="messages-load-more meta">
+              Scroll up for older messages
+            </p>
+            <div
+              ref="loadMoreSentinelRef"
+              class="load-more-sentinel"
+              aria-hidden="true"
+            />
           </div>
 
-          <p v-if="initialMessagesLoading" class="messages-load-more messages-loading">Loading messages...</p>
+          <p
+            v-if="initialMessagesLoading"
+            class="messages-load-more messages-loading"
+          >
+            Loading messages...
+          </p>
 
           <ul class="messages">
-            <li v-if="!initialMessagesLoading && messages.length === 0" class="meta messages-empty">
+            <li
+              v-if="!initialMessagesLoading && messages.length === 0"
+              class="meta messages-empty"
+            >
               No messages yet.
             </li>
-            <li v-for="message in messages" :key="message.id" class="message-item">
+            <li
+              v-for="message in messages"
+              :key="message.id"
+              class="message-item"
+            >
               <div class="message-head">
                 <strong>{{ message.authorUsername }}</strong>
-                <span class="meta">{{ formatDateTime(message.createdAt) }}</span>
+                <span class="meta">{{
+                  formatDateTime(message.createdAt)
+                }}</span>
               </div>
               <p>{{ message.text }}</p>
             </li>
           </ul>
         </div>
         <form class="message-compose" @submit.prevent="onSendMessage">
-          <input v-model="messageText" placeholder="Type your message..." required />
+          <input
+            v-model="messageText"
+            placeholder="Type your message..."
+            required
+          />
           <button :disabled="sendLoading" type="submit">
             {{ sendLoading ? "Sending..." : "Send" }}
           </button>
         </form>
-        <p v-if="sendError" class="error message-compose-error">{{ sendError }}</p>
-        <p v-if="errorMessage" class="error message-compose-error">{{ errorMessage }}</p>
+        <p v-if="sendError" class="error message-compose-error">
+          {{ sendError }}
+        </p>
+        <p v-if="errorMessage" class="error message-compose-error">
+          {{ errorMessage }}
+        </p>
       </section>
 
       <aside class="card chat-sidebar">
@@ -390,19 +449,25 @@ onUnmounted(teardownLoadMoreObserver);
             :aria-expanded="participantsExpanded"
             @click="participantsExpanded = !participantsExpanded"
           >
-            <span>Participants ({{ chat.participants.length }})</span>
-            <span class="collapsible-chevron" :class="{ expanded: participantsExpanded }">▼</span>
+            <span>Participants ({{ chat.members.length }})</span>
+            <span
+              class="collapsible-chevron"
+              :class="{ expanded: participantsExpanded }"
+              >▼</span
+            >
           </button>
           <div v-show="participantsExpanded" class="collapsible-body">
             <ul class="participants-list">
               <li
-                v-for="participant in chat.participants"
+                v-for="participant in chat.members"
                 :key="participant.id"
                 class="participant-item"
               >
                 <span>
                   {{ participant.username }}
-                  <span v-if="participant.id === chat.ownerId" class="meta">(owner)</span>
+                  <span v-if="participant.id === chat.ownerId" class="meta"
+                    >(owner)</span
+                  >
                 </span>
                 <button
                   v-if="isOwner && participant.id !== chat.ownerId"
@@ -445,7 +510,11 @@ onUnmounted(teardownLoadMoreObserver);
             <p v-if="participantError" class="error">{{ participantError }}</p>
           </div>
 
-          <button class="danger delete-chat-button" :disabled="deleteLoading" @click="onDeleteChat">
+          <button
+            class="danger delete-chat-button"
+            :disabled="deleteLoading"
+            @click="onDeleteChat"
+          >
             {{ deleteLoading ? "Deleting..." : "Delete chat" }}
           </button>
           <p v-if="deleteError" class="error">{{ deleteError }}</p>
