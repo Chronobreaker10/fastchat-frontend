@@ -2,7 +2,6 @@
 import { computed, onMounted, reactive, ref } from "vue";
 import { RouterLink, useRouter } from "vue-router";
 import { clearCurrentUser, sessionState } from "../store/session";
-import { createChat, getChatsForUser } from "../api/mockApi";
 import { formatDateTime } from "../utils/format";
 import { authApi } from "../api/auth";
 import { chatApi } from "../api/chats";

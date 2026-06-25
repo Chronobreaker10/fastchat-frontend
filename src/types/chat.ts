@@ -19,3 +19,8 @@ export interface ChatRead {
 export interface CreateChatRequest {
   name: string;
 }
+
+export interface InviteResponse {
+  token: string;
+  chat_name: string;
+}

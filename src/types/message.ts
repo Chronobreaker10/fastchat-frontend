@@ -9,9 +9,15 @@ export interface Message {
 }
 
 export interface MessageWithSender {
-  id: number;
-  sender: User;
+  id?: number;
+  sender?: User;
   created_at: string;
+  text: string;
+  chat_id?: string;
+  is_system?: boolean;
+}
+
+export interface CreateMessageRequest {
   text: string;
   chat_id: string;
 }

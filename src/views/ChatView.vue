@@ -9,19 +9,11 @@ import {
   watch,
 } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
-import {
-  addParticipant,
-  createInvite,
-  deleteChat,
-  getChatDetails,
-  getChatMessages,
-  leaveChat,
-  removeParticipant,
-  sendMessage,
-} from "../api/mockApi";
 import { clearCurrentUser, sessionState } from "../store/session";
 import { formatDateTime } from "../utils/format";
 import { chatApi } from "../api/chats";
+import { messageApi } from "../api/messages";
+import { authApi } from "../api/auth";
 
 const SCROLL_LOAD_THRESHOLD = 80;
 
@@ -30,7 +22,6 @@ const router = useRouter();
 const chat = ref(null);
 const messages = ref([]);
 const loading = ref(false);
-const initialMessagesLoading = ref(false);
 const loadingOlder = ref(false);
 const hasMoreOlder = ref(false);
 const errorMessage = ref("");
@@ -64,7 +55,7 @@ const isOwner = computed(
   () =>
     chat.value &&
     currentUser.value &&
-    chat.value.ownerId === currentUser.value.id,
+    chat.value.user_id === currentUser.value.id,
 );
 
 function waitForPaint() {
@@ -100,27 +91,16 @@ async function scrollToBottom() {
   }
 }
 
-async function loadInitialMessages() {
+async function loadInitialMessages(chat) {
   initialScrollDone.value = false;
-  initialMessagesLoading.value = true;
-  try {
-    const { messages: page, hasMore } = await getChatMessages(
-      route.params.id,
-      currentUser.value.id,
-    );
-    messages.value = page;
-    hasMoreOlder.value = hasMore;
-    initialMessagesLoading.value = false;
-    await nextTick();
-    await scrollToBottom();
-    initialScrollDone.value = true;
-    await nextTick();
-    await scrollToBottom();
-    setupLoadMoreObserver();
-  } catch (error) {
-    errorMessage.value = error.message;
-    initialMessagesLoading.value = false;
-  }
+  messages.value = chat.messages;
+  hasMoreOlder.value = messages.value.length <= chat.total_messages;
+  await nextTick();
+  await scrollToBottom();
+  initialScrollDone.value = true;
+  await nextTick();
+  await scrollToBottom();
+  setupLoadMoreObserver();
 }
 
 async function loadOlderMessages() {
@@ -140,13 +120,12 @@ async function loadOlderMessages() {
 
   loadingOlder.value = true;
   try {
-    const { messages: page, hasMore } = await getChatMessages(
-      route.params.id,
-      currentUser.value.id,
-      { before: oldestId },
-    );
-    messages.value = [...page, ...messages.value];
-    hasMoreOlder.value = hasMore;
+    const response = await chatApi.getChatMessages(route.params.id, {
+      date: messages.value[0].created_at,
+      entity_id: messages.value[0].id,
+    });
+    messages.value = [...response, ...messages.value];
+    hasMoreOlder.value = response.length >= 10;
     await nextTick();
     if (el) {
       el.scrollTop = prevScrollTop + (el.scrollHeight - prevHeight);
@@ -190,7 +169,6 @@ function onMessagesScroll(event) {
     el.scrollTop <= SCROLL_LOAD_THRESHOLD &&
     hasMoreOlder.value &&
     !loadingOlder.value &&
-    !initialMessagesLoading.value &&
     initialScrollDone.value
   ) {
     loadOlderMessages();
@@ -198,7 +176,6 @@ function onMessagesScroll(event) {
 }
 
 async function loadChatMeta() {
-  //chat.value = await getChatDetails(route.params.id, currentUser.value.id);
   chat.value = await chatApi.getChat(route.params.id);
 }
 
@@ -211,29 +188,32 @@ async function loadChat() {
   teardownLoadMoreObserver();
   chat.value = null;
 
-  //try {
-  await loadChatMeta();
-  loading.value = false;
-  await nextTick();
-  await loadInitialMessages();
-  // } catch (error) {
-  //   errorMessage.value = error.message;
-  //   chat.value = null;
-  //   loading.value = false;
-  // }
+  try {
+    await loadChatMeta();
+    loading.value = false;
+    await nextTick();
+    await loadInitialMessages(chat.value);
+  } catch (error) {
+    errorMessage.value = error.message;
+    chat.value = null;
+    loading.value = false;
+  }
 }
 
 async function onSendMessage() {
   sendLoading.value = true;
   sendError.value = "";
   try {
-    const sent = await sendMessage(
-      chat.value.id,
-      currentUser.value.id,
-      messageText.value,
-    );
+    const response = await messageApi.send({
+      chat_id: chat.value.id,
+      text: messageText.value,
+    });
     messageText.value = "";
-    messages.value = [...messages.value, sent];
+    const newMessage = {
+      ...response.details.message,
+      sender: currentUser.value,
+    };
+    messages.value = [...messages.value, newMessage];
     await scrollToBottom();
   } catch (error) {
     sendError.value = error.message;
@@ -246,13 +226,20 @@ async function onAddParticipant() {
   participantLoading.value = true;
   participantError.value = "";
   try {
-    await addParticipant(
+    const response = await chatApi.inviteToChat(
       chat.value.id,
-      currentUser.value.id,
       participantForm.username,
     );
     participantForm.username = "";
     await loadChatMeta();
+    messages.value = [
+      ...messages.value,
+      {
+        text: response.message,
+        created_at: new Date().toISOString(),
+        is_system: true,
+      },
+    ];
   } catch (error) {
     participantError.value = error.message;
   } finally {
@@ -264,7 +251,7 @@ async function onCreateInvite() {
   inviteLoading.value = true;
   inviteError.value = "";
   try {
-    const { token } = await createInvite(chat.value.id, currentUser.value.id);
+    const { token } = await chatApi.getInviteToken(chat.value.id);
     inviteLink.value = `${window.location.origin}/join/${token}`;
   } catch (error) {
     inviteError.value = error.message;
@@ -281,7 +268,7 @@ async function onDeleteChat() {
   deleteLoading.value = true;
   deleteError.value = "";
   try {
-    await deleteChat(chat.value.id, currentUser.value.id);
+    await chatApi.deleteChat(chat.value.id);
     router.push("/chats");
   } catch (error) {
     deleteError.value = error.message;
@@ -294,7 +281,7 @@ async function onLeaveChat() {
   leaveLoading.value = true;
   leaveError.value = "";
   try {
-    await leaveChat(chat.value.id, currentUser.value.id);
+    await chatApi.leaveChat(chat.value.id);
     router.push("/chats");
   } catch (error) {
     leaveError.value = error.message;
@@ -307,8 +294,16 @@ async function onKickParticipant(participantId) {
   kickError.value = "";
   kickLoadingById.value = { ...kickLoadingById.value, [participantId]: true };
   try {
-    await removeParticipant(chat.value.id, currentUser.value.id, participantId);
+    const response = await chatApi.kickMember(chat.value.id, participantId);
     await loadChatMeta();
+    messages.value = [
+      ...messages.value,
+      {
+        text: response.message,
+        created_at: new Date().toISOString(),
+        is_system: true,
+      },
+    ];
   } catch (error) {
     kickError.value = error.message;
   } finally {
@@ -319,9 +314,17 @@ async function onKickParticipant(participantId) {
   }
 }
 
-function logout() {
-  clearCurrentUser();
-  router.push("/login");
+async function logout() {
+  if (!sessionState.currentUser) {
+    return;
+  }
+  try {
+    clearCurrentUser();
+    await authApi.logout();
+    router.push("/login");
+  } catch (error) {
+    errorMessage.value = error.message;
+  }
 }
 
 watch(
@@ -389,18 +392,8 @@ onUnmounted(teardownLoadMoreObserver);
             />
           </div>
 
-          <p
-            v-if="initialMessagesLoading"
-            class="messages-load-more messages-loading"
-          >
-            Loading messages...
-          </p>
-
           <ul class="messages">
-            <li
-              v-if="!initialMessagesLoading && messages.length === 0"
-              class="meta messages-empty"
-            >
+            <li v-if="messages.length === 0" class="meta messages-empty">
               No messages yet.
             </li>
             <li
@@ -409,9 +402,11 @@ onUnmounted(teardownLoadMoreObserver);
               class="message-item"
             >
               <div class="message-head">
-                <strong>{{ message.authorUsername }}</strong>
+                <strong v-if="!message.is_system">{{
+                  message.sender.username
+                }}</strong>
                 <span class="meta">{{
-                  formatDateTime(message.createdAt)
+                  formatDateTime(message.created_at)
                 }}</span>
               </div>
               <p>{{ message.text }}</p>
@@ -437,9 +432,9 @@ onUnmounted(teardownLoadMoreObserver);
       </section>
 
       <aside class="card chat-sidebar">
-        <h1 class="chat-sidebar-title">{{ chat.title }}</h1>
-        <p v-if="chat.messageCount != null" class="meta">
-          {{ chat.messageCount }} messages total
+        <h1 class="chat-sidebar-title">{{ chat.name }}</h1>
+        <p v-if="chat.total_messages != null" class="meta">
+          {{ chat.total_messages }} messages total
         </p>
 
         <div class="sidebar-section">
@@ -460,22 +455,26 @@ onUnmounted(teardownLoadMoreObserver);
             <ul class="participants-list">
               <li
                 v-for="participant in chat.members"
-                :key="participant.id"
+                :key="participant.user.id"
                 class="participant-item"
               >
                 <span>
-                  {{ participant.username }}
-                  <span v-if="participant.id === chat.ownerId" class="meta"
+                  {{ participant.user.username }}
+                  <span v-if="participant.user.id === chat.user_id" class="meta"
                     >(owner)</span
                   >
                 </span>
                 <button
-                  v-if="isOwner && participant.id !== chat.ownerId"
+                  v-if="isOwner && participant.user.id !== chat.user_id"
                   class="danger small"
-                  :disabled="kickLoadingById[participant.id]"
-                  @click="onKickParticipant(participant.id)"
+                  :disabled="kickLoadingById[participant.user.id]"
+                  @click="onKickParticipant(participant.user.id)"
                 >
-                  {{ kickLoadingById[participant.id] ? "Removing..." : "Kick" }}
+                  {{
+                    kickLoadingById[participant.user.id]
+                      ? "Removing..."
+                      : "Kick"
+                  }}
                 </button>
               </li>
             </ul>
@@ -483,33 +482,33 @@ onUnmounted(teardownLoadMoreObserver);
           </div>
         </div>
 
+        <div class="sidebar-section">
+          <h2 class="sidebar-heading">Invite</h2>
+          <div class="invite-row">
+            <button :disabled="inviteLoading" @click="onCreateInvite">
+              {{ inviteLoading ? "Generating..." : "Generate invite link" }}
+            </button>
+            <input v-if="inviteLink" :value="inviteLink" readonly />
+          </div>
+          <p v-if="inviteError" class="error">{{ inviteError }}</p>
+        </div>
+
+        <div class="sidebar-section">
+          <h2 class="sidebar-heading">Add participant</h2>
+          <form class="sidebar-form" @submit.prevent="onAddParticipant">
+            <input
+              v-model="participantForm.username"
+              placeholder="Username to add"
+              required
+            />
+            <button :disabled="participantLoading" type="submit">
+              {{ participantLoading ? "Adding..." : "Add" }}
+            </button>
+          </form>
+          <p v-if="participantError" class="error">{{ participantError }}</p>
+        </div>
+
         <template v-if="isOwner">
-          <div class="sidebar-section">
-            <h2 class="sidebar-heading">Invite</h2>
-            <div class="invite-row">
-              <button :disabled="inviteLoading" @click="onCreateInvite">
-                {{ inviteLoading ? "Generating..." : "Generate invite link" }}
-              </button>
-              <input v-if="inviteLink" :value="inviteLink" readonly />
-            </div>
-            <p v-if="inviteError" class="error">{{ inviteError }}</p>
-          </div>
-
-          <div class="sidebar-section">
-            <h2 class="sidebar-heading">Add participant</h2>
-            <form class="sidebar-form" @submit.prevent="onAddParticipant">
-              <input
-                v-model="participantForm.username"
-                placeholder="Username to add"
-                required
-              />
-              <button :disabled="participantLoading" type="submit">
-                {{ participantLoading ? "Adding..." : "Add" }}
-              </button>
-            </form>
-            <p v-if="participantError" class="error">{{ participantError }}</p>
-          </div>
-
           <button
             class="danger delete-chat-button"
             :disabled="deleteLoading"

@@ -1,8 +1,8 @@
 <script setup>
 import { onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { joinByInvite } from "../api/mockApi";
 import { sessionState } from "../store/session";
+import { chatApi } from "../api/chats";
 
 const route = useRoute();
 const router = useRouter();
@@ -14,8 +14,8 @@ onMounted(async () => {
   loading.value = true;
   errorMessage.value = "";
   try {
-    const { chatId } = await joinByInvite(route.params.token, sessionState.currentUser.id);
-    router.replace(`/chats/${chatId}`);
+    const response = await chatApi.joinByInvite(route.params.token);
+    router.replace(`/chats/${response.details.chat_id}`);
   } catch (error) {
     errorMessage.value = error.message;
   } finally {
