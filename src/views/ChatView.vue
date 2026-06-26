@@ -49,6 +49,14 @@ const leaveError = ref("");
 const kickLoadingById = ref({});
 const kickError = ref("");
 const participantsExpanded = ref(false);
+const ws = new WebSocket(
+  `ws://localhost:8000/api/v1/chats/${route.params.id}/ws`,
+);
+
+ws.onmessage = (event) => {
+  messages.value = [...messages.value, JSON.parse(event.data)];
+  scrollToBottom();
+};
 
 const currentUser = computed(() => sessionState.currentUser);
 const isOwner = computed(
@@ -213,7 +221,8 @@ async function onSendMessage() {
       ...response.details.message,
       sender: currentUser.value,
     };
-    messages.value = [...messages.value, newMessage];
+    ws.send(JSON.stringify(newMessage));
+    // messages.value = [...messages.value, newMessage];
     await scrollToBottom();
   } catch (error) {
     sendError.value = error.message;

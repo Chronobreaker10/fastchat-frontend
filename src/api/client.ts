@@ -13,8 +13,6 @@ export const apiClient = {
   async request(endpoint: string, options: RequestOptions) {
     const url = `${BASE_URL}${endpoint}`;
 
-    console.log(options.credentials || "include");
-
     const optionsWithDefaults = {
       ...options,
       headers: options.headers || { "Content-Type": "application/json" },
