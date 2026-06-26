@@ -1,10 +1,12 @@
-<script setup>
+<script setup lang="ts">
 import { reactive, ref } from "vue";
-import { RouterLink, useRouter } from "vue-router";
-import { authApi } from "../api/auth";
-import { setCurrentUser } from "../store/session";
+import { RouterLink } from "vue-router";
 
-const router = useRouter();
+import { useAuth } from "../composables/useAuth";
+import { getErrorMessage } from "../utils/errors";
+
+const { loginAndRedirect } = useAuth();
+
 const form = reactive({
   username: "",
   password: "",
@@ -12,19 +14,17 @@ const form = reactive({
 const isSubmitting = ref(false);
 const errorMessage = ref("");
 
-async function onSubmit() {
+async function onSubmit(): Promise<void> {
   isSubmitting.value = true;
   errorMessage.value = "";
+
   try {
-    await authApi.login({
+    await loginAndRedirect({
       username: form.username,
       password: form.password,
     });
-    const user = await authApi.getCurrentUser();
-    setCurrentUser(user);
-    router.push("/chats");
   } catch (error) {
-    errorMessage.value = error.message;
+    errorMessage.value = getErrorMessage(error);
   } finally {
     isSubmitting.value = false;
   }
@@ -34,22 +34,22 @@ async function onSubmit() {
 <template>
   <div class="auth-page">
     <form class="card auth-card" @submit.prevent="onSubmit">
-      <h1>FastChat Login</h1>
+      <h1>Вход в FastChat</h1>
       <label>
-        Username
+        Имя пользователя
         <input v-model="form.username" required />
       </label>
       <label>
-        Password
+        Пароль
         <input v-model="form.password" type="password" required />
       </label>
       <button :disabled="isSubmitting" type="submit">
-        {{ isSubmitting ? "Signing in..." : "Login" }}
+        {{ isSubmitting ? "Вход..." : "Войти" }}
       </button>
       <p v-if="errorMessage" class="error">{{ errorMessage }}</p>
       <p class="helper">
-        No account?
-        <RouterLink to="/register">Register</RouterLink>
+        Нет аккаунта?
+        <RouterLink to="/register">Зарегистрироваться</RouterLink>
       </p>
     </form>
   </div>

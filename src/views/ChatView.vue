@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 import {
   computed,
   nextTick,
@@ -9,26 +9,32 @@ import {
   watch,
 } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
-import { clearCurrentUser, sessionState } from "../store/session";
-import { formatDateTime } from "../utils/format";
+
 import { chatApi } from "../api/chats";
 import { messageApi } from "../api/messages";
-import { authApi } from "../api/auth";
+import { useAuth } from "../composables/useAuth";
+import { useKeyedAsyncAction } from "../composables/useAsyncAction";
+import type { ChatMember, ChatRead } from "../types/chat";
+import type { ChatWebSocketPayload, MessageWithSender } from "../types/message";
+import { formatDateTime } from "../utils/format";
+import { getErrorMessage } from "../utils/errors";
 
 const SCROLL_LOAD_THRESHOLD = 80;
 
 const route = useRoute();
 const router = useRouter();
-const chat = ref(null);
-const messages = ref([]);
+const { currentUser, username, logout } = useAuth();
+
+const chat = ref<ChatRead | null>(null);
+const messages = ref<MessageWithSender[]>([]);
 const loading = ref(false);
 const loadingOlder = ref(false);
 const hasMoreOlder = ref(false);
 const errorMessage = ref("");
-const messagesScrollRef = ref(null);
-const loadMoreSentinelRef = ref(null);
+const messagesScrollRef = ref<HTMLElement | null>(null);
+const loadMoreSentinelRef = ref<HTMLElement | null>(null);
 const initialScrollDone = ref(false);
-let loadMoreObserver = null;
+let loadMoreObserver: IntersectionObserver | null = null;
 
 const messageText = ref("");
 const sendLoading = ref(false);
@@ -46,39 +52,78 @@ const deleteLoading = ref(false);
 const deleteError = ref("");
 const leaveLoading = ref(false);
 const leaveError = ref("");
-const kickLoadingById = ref({});
 const kickError = ref("");
+const deleteMessageError = ref("");
 const participantsExpanded = ref(false);
-const ws = new WebSocket(
-  `ws://localhost:8000/api/v1/chats/${route.params.id}/ws`,
-);
 
-ws.onmessage = (event) => {
-  messages.value = [...messages.value, JSON.parse(event.data)];
-  scrollToBottom();
+const { loadingByKey: kickLoadingById, execute: executeKick } =
+  useKeyedAsyncAction();
+const {
+  loadingByKey: deleteMessageLoadingById,
+  execute: executeDeleteMessage,
+} = useKeyedAsyncAction();
+
+const chatId = computed(() => String(route.params.id));
+
+const ws = new WebSocket(`ws://localhost:8000/api/v1/chats/${chatId.value}/ws`);
+
+ws.onmessage = (event: MessageEvent<string>) => {
+  const data = JSON.parse(event.data) as ChatWebSocketPayload;
+
+  if (data.event === "message_deleted") {
+    messages.value = messages.value.filter(
+      (message) => message.id !== data.payload,
+    );
+    return;
+  }
+
+  if (data.event === "sent_message") {
+    messages.value = [...messages.value, data.payload as MessageWithSender];
+    scrollToBottom();
+  }
+
+  if (data.event === "left_user" || data.event === "joined_user") {
+    console.log(data.payload);
+    messages.value = [
+      ...messages.value,
+      {
+        text: data.payload as string,
+        created_at: new Date().toISOString(),
+        is_system: true,
+      },
+    ];
+    if (data.event === "left_user" && chat.value) {
+      chat.value.members = chat.value.members.filter(
+        (member) => member.user.id !== data.details,
+      );
+    }
+    if (data.event === "joined_user") {
+      chat.value?.members.push(data.details as ChatMember);
+    }
+    scrollToBottom();
+  }
 };
 
-const currentUser = computed(() => sessionState.currentUser);
 const isOwner = computed(
   () =>
-    chat.value &&
-    currentUser.value &&
+    chat.value != null &&
+    currentUser.value != null &&
     chat.value.user_id === currentUser.value.id,
 );
 
-function waitForPaint() {
+function waitForPaint(): Promise<void> {
   return new Promise((resolve) => {
     requestAnimationFrame(() => {
-      requestAnimationFrame(resolve);
+      requestAnimationFrame(() => resolve());
     });
   });
 }
 
-function isScrollAtBottom(el, tolerance = 4) {
+function isScrollAtBottom(el: HTMLElement, tolerance = 4): boolean {
   return el.scrollHeight - el.scrollTop - el.clientHeight <= tolerance;
 }
 
-async function scrollToBottom() {
+async function scrollToBottom(): Promise<void> {
   for (let attempt = 0; attempt < 12; attempt += 1) {
     await nextTick();
     await waitForPaint();
@@ -99,10 +144,10 @@ async function scrollToBottom() {
   }
 }
 
-async function loadInitialMessages(chat) {
+async function loadInitialMessages(chatData: ChatRead): Promise<void> {
   initialScrollDone.value = false;
-  messages.value = chat.messages;
-  hasMoreOlder.value = messages.value.length <= chat.total_messages;
+  messages.value = chatData.messages;
+  hasMoreOlder.value = messages.value.length <= chatData.total_messages;
   await nextTick();
   await scrollToBottom();
   initialScrollDone.value = true;
@@ -111,7 +156,7 @@ async function loadInitialMessages(chat) {
   setupLoadMoreObserver();
 }
 
-async function loadOlderMessages() {
+async function loadOlderMessages(): Promise<void> {
   if (
     !initialScrollDone.value ||
     !hasMoreOlder.value ||
@@ -124,38 +169,46 @@ async function loadOlderMessages() {
   const el = messagesScrollRef.value;
   const prevHeight = el?.scrollHeight ?? 0;
   const prevScrollTop = el?.scrollTop ?? 0;
-  const oldestId = messages.value[0].id;
+  const oldestMessage = messages.value[0];
+
+  if (!oldestMessage.id) {
+    return;
+  }
 
   loadingOlder.value = true;
+
   try {
-    const response = await chatApi.getChatMessages(route.params.id, {
-      date: messages.value[0].created_at,
-      entity_id: messages.value[0].id,
+    const response = await chatApi.getChatMessages(chatId.value, {
+      date: oldestMessage.created_at,
+      entity_id: String(oldestMessage.id),
     });
     messages.value = [...response, ...messages.value];
     hasMoreOlder.value = response.length >= 10;
     await nextTick();
+
     if (el) {
       el.scrollTop = prevScrollTop + (el.scrollHeight - prevHeight);
     }
+
     setupLoadMoreObserver();
   } catch (error) {
-    errorMessage.value = error.message;
+    errorMessage.value = getErrorMessage(error);
   } finally {
     loadingOlder.value = false;
   }
 }
 
-function teardownLoadMoreObserver() {
+function teardownLoadMoreObserver(): void {
   loadMoreObserver?.disconnect();
   loadMoreObserver = null;
 }
 
-function setupLoadMoreObserver() {
+function setupLoadMoreObserver(): void {
   teardownLoadMoreObserver();
 
   const root = messagesScrollRef.value;
   const sentinel = loadMoreSentinelRef.value;
+
   if (!root || !sentinel || !hasMoreOlder.value || !initialScrollDone.value) {
     return;
   }
@@ -171,8 +224,9 @@ function setupLoadMoreObserver() {
   loadMoreObserver.observe(sentinel);
 }
 
-function onMessagesScroll(event) {
-  const el = event.target;
+function onMessagesScroll(event: Event): void {
+  const el = event.target as HTMLElement;
+
   if (
     el.scrollTop <= SCROLL_LOAD_THRESHOLD &&
     hasMoreOlder.value &&
@@ -183,11 +237,11 @@ function onMessagesScroll(event) {
   }
 }
 
-async function loadChatMeta() {
-  chat.value = await chatApi.getChat(route.params.id);
+async function loadChatMeta(): Promise<void> {
+  chat.value = await chatApi.getChat(chatId.value);
 }
 
-async function loadChat() {
+async function loadChat(): Promise<void> {
   loading.value = true;
   errorMessage.value = "";
   messages.value = [];
@@ -200,140 +254,173 @@ async function loadChat() {
     await loadChatMeta();
     loading.value = false;
     await nextTick();
-    await loadInitialMessages(chat.value);
+
+    if (chat.value) {
+      await loadInitialMessages(chat.value);
+    }
   } catch (error) {
-    errorMessage.value = error.message;
+    errorMessage.value = getErrorMessage(error);
     chat.value = null;
     loading.value = false;
   }
 }
 
-async function onSendMessage() {
+async function onSendMessage(): Promise<void> {
+  if (!chat.value) {
+    return;
+  }
+
   sendLoading.value = true;
   sendError.value = "";
+
   try {
     const response = await messageApi.send({
       chat_id: chat.value.id,
       text: messageText.value,
     });
     messageText.value = "";
-    const newMessage = {
+
+    const newMessage: MessageWithSender = {
       ...response.details.message,
-      sender: currentUser.value,
+      sender: currentUser.value ?? undefined,
     };
     ws.send(JSON.stringify(newMessage));
-    // messages.value = [...messages.value, newMessage];
     await scrollToBottom();
   } catch (error) {
-    sendError.value = error.message;
+    sendError.value = getErrorMessage(error);
   } finally {
     sendLoading.value = false;
   }
 }
 
-async function onAddParticipant() {
+async function onAddParticipant(): Promise<void> {
+  if (!chat.value) {
+    return;
+  }
+
   participantLoading.value = true;
   participantError.value = "";
+
   try {
-    const response = await chatApi.inviteToChat(
-      chat.value.id,
-      participantForm.username,
-    );
+    await chatApi.inviteToChat(chat.value.id, participantForm.username);
     participantForm.username = "";
     await loadChatMeta();
-    messages.value = [
-      ...messages.value,
-      {
-        text: response.message,
-        created_at: new Date().toISOString(),
-        is_system: true,
-      },
-    ];
   } catch (error) {
-    participantError.value = error.message;
+    participantError.value = getErrorMessage(error);
   } finally {
     participantLoading.value = false;
   }
 }
 
-async function onCreateInvite() {
+async function onCreateInvite(): Promise<void> {
+  if (!chat.value) {
+    return;
+  }
+
   inviteLoading.value = true;
   inviteError.value = "";
+
   try {
     const { token } = await chatApi.getInviteToken(chat.value.id);
     inviteLink.value = `${window.location.origin}/join/${token}`;
   } catch (error) {
-    inviteError.value = error.message;
+    inviteError.value = getErrorMessage(error);
   } finally {
     inviteLoading.value = false;
   }
 }
 
-async function onDeleteChat() {
-  if (!window.confirm("Delete this chat? This cannot be undone.")) {
+async function onDeleteChat(): Promise<void> {
+  if (
+    !chat.value ||
+    !window.confirm("Удалить этот чат? Это действие необратимо.")
+  ) {
     return;
   }
 
   deleteLoading.value = true;
   deleteError.value = "";
+
   try {
     await chatApi.deleteChat(chat.value.id);
-    router.push("/chats");
+    await router.push("/chats");
   } catch (error) {
-    deleteError.value = error.message;
+    deleteError.value = getErrorMessage(error);
   } finally {
     deleteLoading.value = false;
   }
 }
 
-async function onLeaveChat() {
+async function onLeaveChat(): Promise<void> {
+  if (!chat.value) {
+    return;
+  }
+
   leaveLoading.value = true;
   leaveError.value = "";
+
   try {
     await chatApi.leaveChat(chat.value.id);
-    router.push("/chats");
+    await router.push("/chats");
   } catch (error) {
-    leaveError.value = error.message;
+    leaveError.value = getErrorMessage(error);
   } finally {
     leaveLoading.value = false;
   }
 }
 
-async function onKickParticipant(participantId) {
-  kickError.value = "";
-  kickLoadingById.value = { ...kickLoadingById.value, [participantId]: true };
-  try {
-    const response = await chatApi.kickMember(chat.value.id, participantId);
-    await loadChatMeta();
-    messages.value = [
-      ...messages.value,
-      {
-        text: response.message,
-        created_at: new Date().toISOString(),
-        is_system: true,
-      },
-    ];
-  } catch (error) {
-    kickError.value = error.message;
-  } finally {
-    kickLoadingById.value = {
-      ...kickLoadingById.value,
-      [participantId]: false,
-    };
-  }
+function canDeleteMessage(message: MessageWithSender): boolean {
+  return (
+    !message.is_system &&
+    message.id != null &&
+    message.sender?.id === currentUser.value?.id
+  );
 }
 
-async function logout() {
-  if (!sessionState.currentUser) {
+async function onDeleteMessage(messageId: number): Promise<void> {
+  if (!window.confirm("Удалить это сообщение?")) {
     return;
   }
-  try {
-    clearCurrentUser();
-    await authApi.logout();
-    router.push("/login");
-  } catch (error) {
-    errorMessage.value = error.message;
+
+  deleteMessageError.value = "";
+
+  await executeDeleteMessage(
+    messageId,
+    async () => {
+      await messageApi.delete(messageId);
+      messages.value = messages.value.filter(
+        (message) => message.id !== messageId,
+      );
+    },
+    (message) => {
+      deleteMessageError.value = message;
+    },
+  );
+}
+
+async function onKickParticipant(participantId: number): Promise<void> {
+  if (!chat.value) {
+    return;
   }
+
+  kickError.value = "";
+
+  await executeKick(
+    participantId,
+    async () => {
+      await chatApi.kickMember(chat.value!.id, participantId);
+      await loadChatMeta();
+    },
+    (message) => {
+      kickError.value = message;
+    },
+  );
+}
+
+async function onLogout(): Promise<void> {
+  await logout((message) => {
+    errorMessage.value = message;
+  });
 }
 
 watch(
@@ -350,6 +437,7 @@ watch(hasMoreOlder, (hasMore) => {
     teardownLoadMoreObserver();
     return;
   }
+
   nextTick(() => setupLoadMoreObserver());
 });
 
@@ -360,20 +448,20 @@ onUnmounted(teardownLoadMoreObserver);
 <template>
   <div class="page chat-page">
     <header class="topbar card">
-      <RouterLink class="secondary link-button" to="/chats"
-        >Back to chats</RouterLink
-      >
+      <RouterLink class="secondary link-button" to="/chats">
+        К списку чатов
+      </RouterLink>
       <div class="topbar-actions">
-        <span class="username">{{ currentUser?.username }}</span>
-        <button class="secondary" @click="logout">Logout</button>
+        <span class="username">{{ username }}</span>
+        <button class="secondary" type="button" @click="onLogout">Выйти</button>
       </div>
     </header>
 
-    <section class="card" v-if="loading">
-      <p>Loading chat...</p>
+    <section v-if="loading" class="card">
+      <p>Загрузка чата...</p>
     </section>
 
-    <section class="card" v-else-if="errorMessage && !chat">
+    <section v-else-if="errorMessage && !chat" class="card">
       <p class="error">{{ errorMessage }}</p>
     </section>
 
@@ -389,10 +477,10 @@ onUnmounted(teardownLoadMoreObserver);
             class="messages-scroll-top"
           >
             <p v-if="loadingOlder" class="messages-load-more">
-              Loading older messages...
+              Загрузка старых сообщений...
             </p>
             <p v-else class="messages-load-more meta">
-              Scroll up for older messages
+              Прокрутите вверх, чтобы загрузить более ранние сообщения
             </p>
             <div
               ref="loadMoreSentinelRef"
@@ -403,33 +491,70 @@ onUnmounted(teardownLoadMoreObserver);
 
           <ul class="messages">
             <li v-if="messages.length === 0" class="meta messages-empty">
-              No messages yet.
+              Сообщений пока нет.
             </li>
             <li
               v-for="message in messages"
-              :key="message.id"
+              :key="message.id ?? message.created_at"
               class="message-item"
             >
               <div class="message-head">
                 <strong v-if="!message.is_system">{{
-                  message.sender.username
+                  message.sender?.username
                 }}</strong>
                 <span class="meta">{{
                   formatDateTime(message.created_at)
                 }}</span>
               </div>
-              <p>{{ message.text }}</p>
+              <div class="message-body">
+                <p>{{ message.text }}</p>
+                <button
+                  v-if="canDeleteMessage(message) && message.id != null"
+                  type="button"
+                  class="message-delete-btn"
+                  :disabled="deleteMessageLoadingById[message.id]"
+                  :title="
+                    deleteMessageLoadingById[message.id]
+                      ? 'Удаление...'
+                      : 'Удалить сообщение'
+                  "
+                  :aria-label="
+                    deleteMessageLoadingById[message.id]
+                      ? 'Удаление сообщения'
+                      : 'Удалить сообщение'
+                  "
+                  @click="onDeleteMessage(message.id)"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                  >
+                    <polyline points="3 6 5 6 21 6" />
+                    <path
+                      d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"
+                    />
+                  </svg>
+                </button>
+              </div>
             </li>
           </ul>
         </div>
         <form class="message-compose" @submit.prevent="onSendMessage">
           <input
             v-model="messageText"
-            placeholder="Type your message..."
+            placeholder="Введите сообщение..."
             required
           />
           <button :disabled="sendLoading" type="submit">
-            {{ sendLoading ? "Sending..." : "Send" }}
+            {{ sendLoading ? "Отправка..." : "Отправить" }}
           </button>
         </form>
         <p v-if="sendError" class="error message-compose-error">
@@ -438,12 +563,15 @@ onUnmounted(teardownLoadMoreObserver);
         <p v-if="errorMessage" class="error message-compose-error">
           {{ errorMessage }}
         </p>
+        <p v-if="deleteMessageError" class="error message-compose-error">
+          {{ deleteMessageError }}
+        </p>
       </section>
 
       <aside class="card chat-sidebar">
         <h1 class="chat-sidebar-title">{{ chat.name }}</h1>
         <p v-if="chat.total_messages != null" class="meta">
-          {{ chat.total_messages }} messages total
+          Всего сообщений: {{ chat.total_messages }}
         </p>
 
         <div class="sidebar-section">
@@ -453,7 +581,7 @@ onUnmounted(teardownLoadMoreObserver);
             :aria-expanded="participantsExpanded"
             @click="participantsExpanded = !participantsExpanded"
           >
-            <span>Participants ({{ chat.members.length }})</span>
+            <span>Участники ({{ chat.members.length }})</span>
             <span
               class="collapsible-chevron"
               :class="{ expanded: participantsExpanded }"
@@ -470,19 +598,20 @@ onUnmounted(teardownLoadMoreObserver);
                 <span>
                   {{ participant.user.username }}
                   <span v-if="participant.user.id === chat.user_id" class="meta"
-                    >(owner)</span
+                    >(владелец)</span
                   >
                 </span>
                 <button
                   v-if="isOwner && participant.user.id !== chat.user_id"
                   class="danger small"
+                  type="button"
                   :disabled="kickLoadingById[participant.user.id]"
                   @click="onKickParticipant(participant.user.id)"
                 >
                   {{
                     kickLoadingById[participant.user.id]
-                      ? "Removing..."
-                      : "Kick"
+                      ? "Удаление..."
+                      : "Исключить"
                   }}
                 </button>
               </li>
@@ -492,10 +621,14 @@ onUnmounted(teardownLoadMoreObserver);
         </div>
 
         <div class="sidebar-section">
-          <h2 class="sidebar-heading">Invite</h2>
+          <h2 class="sidebar-heading">Приглашение</h2>
           <div class="invite-row">
-            <button :disabled="inviteLoading" @click="onCreateInvite">
-              {{ inviteLoading ? "Generating..." : "Generate invite link" }}
+            <button
+              type="button"
+              :disabled="inviteLoading"
+              @click="onCreateInvite"
+            >
+              {{ inviteLoading ? "Создание..." : "Создать ссылку-приглашение" }}
             </button>
             <input v-if="inviteLink" :value="inviteLink" readonly />
           </div>
@@ -503,15 +636,15 @@ onUnmounted(teardownLoadMoreObserver);
         </div>
 
         <div class="sidebar-section">
-          <h2 class="sidebar-heading">Add participant</h2>
+          <h2 class="sidebar-heading">Добавить участника</h2>
           <form class="sidebar-form" @submit.prevent="onAddParticipant">
             <input
               v-model="participantForm.username"
-              placeholder="Username to add"
+              placeholder="Имя пользователя"
               required
             />
             <button :disabled="participantLoading" type="submit">
-              {{ participantLoading ? "Adding..." : "Add" }}
+              {{ participantLoading ? "Добавление..." : "Добавить" }}
             </button>
           </form>
           <p v-if="participantError" class="error">{{ participantError }}</p>
@@ -520,10 +653,11 @@ onUnmounted(teardownLoadMoreObserver);
         <template v-if="isOwner">
           <button
             class="danger delete-chat-button"
+            type="button"
             :disabled="deleteLoading"
             @click="onDeleteChat"
           >
-            {{ deleteLoading ? "Deleting..." : "Delete chat" }}
+            {{ deleteLoading ? "Удаление..." : "Удалить чат" }}
           </button>
           <p v-if="deleteError" class="error">{{ deleteError }}</p>
         </template>
@@ -531,10 +665,11 @@ onUnmounted(teardownLoadMoreObserver);
         <template v-else>
           <button
             class="secondary leave-chat-button"
+            type="button"
             :disabled="leaveLoading"
             @click="onLeaveChat"
           >
-            {{ leaveLoading ? "Leaving..." : "Leave chat" }}
+            {{ leaveLoading ? "Выход..." : "Покинуть чат" }}
           </button>
           <p v-if="leaveError" class="error">{{ leaveError }}</p>
         </template>

@@ -1,11 +1,12 @@
-import { createRouter, createWebHistory } from "vue-router";
-import { sessionState, setCurrentUser } from "./store/session";
+import { createRouter, createWebHistory, type RouteLocationNormalized } from "vue-router";
+
+import { authApi } from "./api/auth";
+import ChatView from "./views/ChatView.vue";
+import ChatsView from "./views/ChatsView.vue";
+import JoinView from "./views/JoinView.vue";
 import LoginView from "./views/LoginView.vue";
 import RegisterView from "./views/RegisterView.vue";
-import ChatsView from "./views/ChatsView.vue";
-import ChatView from "./views/ChatView.vue";
-import JoinView from "./views/JoinView.vue";
-import { authApi } from "./api/auth";
+import { sessionState, setCurrentUser } from "./store/session";
 
 const router = createRouter({
   history: createWebHistory(),
@@ -23,21 +24,24 @@ const router = createRouter({
   ],
 });
 
-router.beforeEach(async (to) => {
+router.beforeEach(async (to: RouteLocationNormalized) => {
   if (!sessionState.currentUser) {
     try {
       const user = await authApi.getCurrentUser();
       setCurrentUser(user);
-    } catch (error) {
-      // Ignore error
+    } catch {
+      // Сессия отсутствует — пользователь останется неавторизованным
     }
   }
+
   if (to.meta.requiresAuth && !sessionState.currentUser) {
     return "/login";
   }
+
   if (to.meta.guestOnly && sessionState.currentUser) {
     return "/chats";
   }
+
   return true;
 });
 

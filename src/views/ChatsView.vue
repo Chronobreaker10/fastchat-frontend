@@ -1,77 +1,65 @@
-<script setup>
-import { computed, onMounted, reactive, ref } from "vue";
-import { RouterLink, useRouter } from "vue-router";
-import { clearCurrentUser, sessionState } from "../store/session";
-import { formatDateTime } from "../utils/format";
-import { authApi } from "../api/auth";
-import { chatApi } from "../api/chats";
+<script setup lang="ts">
+import { onMounted, reactive, ref } from "vue";
+import { RouterLink } from "vue-router";
 
-const router = useRouter();
-const chats = ref([]);
-const loading = ref(false);
-const errorMessage = ref("");
+import { chatApi } from "../api/chats";
+import { useAuth } from "../composables/useAuth";
+import { useAsyncAction } from "../composables/useAsyncAction";
+import type { Chat } from "../types/chat";
+import { formatDateTime } from "../utils/format";
+import { getErrorMessage } from "../utils/errors";
+import { validateLength, validateRequired } from "../utils/validation";
+
+const { username, logout } = useAuth();
+
+const chats = ref<Chat[]>([]);
+const {
+  loading,
+  error: errorMessage,
+  execute: executeLoadChats,
+} = useAsyncAction();
 const createError = ref("");
 const createLoading = ref(false);
 const createForm = reactive({ title: "" });
 
-const username = computed(
-  () => sessionState.currentUser?.username ?? "unknown",
-);
-const currentUserId = computed(() => sessionState.currentUser?.id ?? "");
-
-async function loadChats() {
-  if (!currentUserId.value) {
-    return;
-  }
-  loading.value = true;
-  errorMessage.value = "";
-  try {
+async function loadChats(): Promise<void> {
+  await executeLoadChats(async () => {
     chats.value = await chatApi.getMyChats();
-  } catch (error) {
-    errorMessage.value = error.message;
-  } finally {
-    loading.value = false;
-  }
+  });
 }
 
-async function onCreateChat() {
+async function onCreateChat(): Promise<void> {
   createError.value = "";
-  if (!createForm.title) {
-    createError.value = "Name is required.";
+
+  const requiredError = validateRequired(createForm.title, "Название");
+  if (requiredError) {
+    createError.value = requiredError;
     return;
   }
-  if (createForm.title.length < 3) {
-    createError.value = "Name must contain at least 3 characters.";
+
+  const lengthError = validateLength(createForm.title, 3, 100, "Название");
+  if (lengthError) {
+    createError.value = lengthError;
     return;
   }
-  if (createForm.title.length > 100) {
-    createError.value = "Name must not exceed 100 characters.";
-    return;
-  }
+
   createLoading.value = true;
+
   try {
-    const chat = await chatApi.create({ name: createForm.title });
+    await chatApi.create({ name: createForm.title });
     createForm.title = "";
     await loadChats();
-    // router.push(`/chats/${chat.id}`);
   } catch (error) {
-    createError.value = error.message;
+    createError.value = getErrorMessage(error);
   } finally {
     createLoading.value = false;
   }
 }
 
-async function logout() {
-  if (!sessionState.currentUser) {
-    return;
-  }
-  try {
-    clearCurrentUser();
-    await authApi.logout();
-    router.push("/login");
-  } catch (error) {
-    errorMessage.value = error.message;
-  }
+async function onLogout(): Promise<void> {
+  await logout((message) => {
+    errorMessage.value = message;
+  });
 }
 
 onMounted(loadChats);
@@ -80,25 +68,25 @@ onMounted(loadChats);
 <template>
   <div class="page">
     <header class="topbar card">
-      <h1>My chats</h1>
+      <h1>Мои чаты</h1>
       <div class="topbar-actions">
         <span class="username">{{ username }}</span>
-        <button class="secondary" @click="logout">Logout</button>
+        <button class="secondary" type="button" @click="onLogout">Выйти</button>
       </div>
     </header>
 
     <section class="card create-chat">
-      <h2>Create chat</h2>
-      <form @submit.prevent="onCreateChat" class="inline-form">
+      <h2>Создать чат</h2>
+      <form class="inline-form" @submit.prevent="onCreateChat">
         <input
           v-model="createForm.title"
-          placeholder="Chat title"
+          placeholder="Название чата"
           required
           minlength="3"
           maxlength="100"
         />
         <button :disabled="createLoading" type="submit">
-          {{ createLoading ? "Creating..." : "Create" }}
+          {{ createLoading ? "Создание..." : "Создать" }}
         </button>
       </form>
       <p v-if="createError" class="error">{{ createError }}</p>
@@ -106,14 +94,19 @@ onMounted(loadChats);
 
     <section class="card">
       <div class="section-header">
-        <h2>Chats list</h2>
-        <button class="secondary" :disabled="loading" @click="loadChats">
-          Refresh
+        <h2>Список чатов</h2>
+        <button
+          class="secondary"
+          type="button"
+          :disabled="loading"
+          @click="loadChats"
+        >
+          Обновить
         </button>
       </div>
-      <p v-if="loading">Loading chats...</p>
+      <p v-if="loading">Загрузка чатов...</p>
       <p v-else-if="errorMessage" class="error">{{ errorMessage }}</p>
-      <p v-else-if="chats.length === 0">You are not in any chats yet.</p>
+      <p v-else-if="chats.length === 0">Вы пока не состоите ни в одном чате.</p>
 
       <ul v-else class="chat-list">
         <li v-for="chat in chats" :key="chat.id" class="chat-list-item">
@@ -125,12 +118,12 @@ onMounted(loadChats);
               {{ chat.last_message.sender_username }}:
               {{ chat.last_message.text }}
             </p>
-            <p v-else class="last-message">No messages yet.</p>
+            <p v-else class="last-message">Сообщений пока нет.</p>
             <p class="meta">
               {{
                 chat.last_message
                   ? formatDateTime(chat.last_message.created_at)
-                  : "No activity"
+                  : "Нет активности"
               }}
             </p>
           </RouterLink>

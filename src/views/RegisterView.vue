@@ -1,10 +1,13 @@
-<script setup>
+<script setup lang="ts">
 import { reactive, ref } from "vue";
-import { RouterLink, useRouter } from "vue-router";
-import { setCurrentUser } from "../store/session";
-import { authApi } from "../api/auth";
+import { RouterLink } from "vue-router";
 
-const router = useRouter();
+import { useAuth } from "../composables/useAuth";
+import { getErrorMessage } from "../utils/errors";
+import { validateLength, validateRequired } from "../utils/validation";
+
+const { registerAndRedirect } = useAuth();
+
 const form = reactive({
   username: "",
   password: "",
@@ -13,44 +16,50 @@ const form = reactive({
 const isSubmitting = ref(false);
 const errorMessage = ref("");
 
-async function onSubmit() {
+async function onSubmit(): Promise<void> {
   errorMessage.value = "";
-  const trimmed = form.username.trim();
-  if (!trimmed) {
-    errorMessage.value = "Username is required.";
+
+  const requiredError =
+    validateRequired(form.username, "Имя пользователя") ||
+    validateRequired(form.password, "Пароль") ||
+    validateRequired(form.repeatPassword, "Повтор пароля");
+
+  if (requiredError) {
+    errorMessage.value = requiredError;
     return;
   }
-  if (trimmed.length < 3) {
-    errorMessage.value = "Username must contain at least 3 characters.";
+
+  const usernameError = validateLength(
+    form.username,
+    3,
+    100,
+    "Имя пользователя",
+  );
+  if (usernameError) {
+    errorMessage.value = usernameError;
     return;
   }
-  if (trimmed.length > 100) {
-    errorMessage.value = "Username must not exceed 100 characters.";
+
+  const passwordError = validateLength(form.password, 5, 100, "Пароль");
+  if (passwordError) {
+    errorMessage.value = passwordError;
     return;
   }
-  if (form.password.length < 5) {
-    errorMessage.value = "Password must contain at least 5 characters.";
-    return;
-  }
-  if (form.password.length > 100) {
-    errorMessage.value = "Password must not exceed 100 characters.";
-    return;
-  }
+
   if (form.password !== form.repeatPassword) {
-    errorMessage.value = "Passwords do not match.";
+    errorMessage.value = "Пароли не совпадают.";
     return;
   }
+
   isSubmitting.value = true;
+
   try {
-    await authApi.register({
+    await registerAndRedirect({
       username: form.username,
       password: form.password,
     });
-    const user = await authApi.getCurrentUser();
-    setCurrentUser(user);
-    router.push("/chats");
   } catch (error) {
-    errorMessage.value = error.message;
+    errorMessage.value = getErrorMessage(error);
   } finally {
     isSubmitting.value = false;
   }
@@ -60,26 +69,26 @@ async function onSubmit() {
 <template>
   <div class="auth-page">
     <form class="card auth-card" @submit.prevent="onSubmit">
-      <h1>Create Account</h1>
+      <h1>Регистрация</h1>
       <label>
-        Username
+        Имя пользователя
         <input v-model="form.username" required />
       </label>
       <label>
-        Password
+        Пароль
         <input v-model="form.password" type="password" required />
       </label>
       <label>
-        Repeat password
+        Повторите пароль
         <input v-model="form.repeatPassword" type="password" required />
       </label>
       <button :disabled="isSubmitting" type="submit">
-        {{ isSubmitting ? "Creating..." : "Register" }}
+        {{ isSubmitting ? "Создание..." : "Зарегистрироваться" }}
       </button>
       <p v-if="errorMessage" class="error">{{ errorMessage }}</p>
       <p class="helper">
-        Already registered?
-        <RouterLink to="/login">Login</RouterLink>
+        Уже есть аккаунт?
+        <RouterLink to="/login">Войти</RouterLink>
       </p>
     </form>
   </div>

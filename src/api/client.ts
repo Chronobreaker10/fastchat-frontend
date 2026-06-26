@@ -1,19 +1,40 @@
-import { sessionState, clearCurrentUser } from "../store/session";
+import { clearCurrentUser } from "../store/session";
+
+interface ApiErrorBody {
+  message?: string;
+  detail?: Array<{ msg?: string }>;
+}
 
 interface RequestOptions {
   headers?: Record<string, string>;
   method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
-  credentials?: "include" | "omit" | "same-origin";
+  credentials?: RequestCredentials;
   body?: string | FormData | URLSearchParams;
 }
 
 const BASE_URL = "http://localhost:8000/api/v1";
 
+function parseErrorMessage(
+  errorData: ApiErrorBody,
+  status: number,
+): string {
+  const detailMessage = errorData.detail?.[0]?.msg;
+
+  return (
+    errorData.message ||
+    detailMessage ||
+    `Ошибка HTTP: ${status}`
+  );
+}
+
 export const apiClient = {
-  async request(endpoint: string, options: RequestOptions) {
+  async request<T = unknown>(
+    endpoint: string,
+    options: RequestOptions,
+  ): Promise<T | null> {
     const url = `${BASE_URL}${endpoint}`;
 
-    const optionsWithDefaults = {
+    const optionsWithDefaults: RequestInit = {
       ...options,
       headers: options.headers || { "Content-Type": "application/json" },
       credentials: options.credentials || "include",
@@ -26,57 +47,52 @@ export const apiClient = {
         clearCurrentUser();
       }
 
-      // Если сервер вернул ошибку, обрабатываем её
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(
-          errorData.message ||
-            errorData.detail[0].msg ||
-            `Ошибка HTTP: ${response.status}`,
-        );
+        const errorData = (await response.json().catch(() => ({}))) as ApiErrorBody;
+        throw new Error(parseErrorMessage(errorData, response.status));
       }
 
       if (response.status === 204) {
         return null;
       }
 
-      return await response.json();
+      return (await response.json()) as T;
     } catch (error) {
       console.error("Ошибка при выполнении запроса к API:", error);
       throw error;
     }
   },
 
-  get(endpoint: string, options: RequestOptions = {}) {
-    return this.request(endpoint, {
+  get<T = unknown>(endpoint: string, options: RequestOptions = {}): Promise<T | null> {
+    return this.request<T>(endpoint, {
       ...options,
       method: "GET",
     });
   },
 
-  post(endpoint: string, options: RequestOptions = {}) {
-    return this.request(endpoint, {
+  post<T = unknown>(endpoint: string, options: RequestOptions = {}): Promise<T | null> {
+    return this.request<T>(endpoint, {
       ...options,
       method: "POST",
     });
   },
 
-  put(endpoint: string, options: RequestOptions = {}) {
-    return this.request(endpoint, {
+  put<T = unknown>(endpoint: string, options: RequestOptions = {}): Promise<T | null> {
+    return this.request<T>(endpoint, {
       ...options,
       method: "PUT",
     });
   },
 
-  patch(endpoint: string, options: RequestOptions = {}) {
-    return this.request(endpoint, {
+  patch<T = unknown>(endpoint: string, options: RequestOptions = {}): Promise<T | null> {
+    return this.request<T>(endpoint, {
       ...options,
       method: "PATCH",
     });
   },
 
-  delete(endpoint: string, options: RequestOptions = {}) {
-    return this.request(endpoint, {
+  delete<T = unknown>(endpoint: string, options: RequestOptions = {}): Promise<T | null> {
+    return this.request<T>(endpoint, {
       ...options,
       method: "DELETE",
     });

@@ -331,7 +331,44 @@ label {
   display: flex;
   justify-content: space-between;
   gap: 8px;
-  margin-bottom: 4px;
+  margin-bottom: 8px;
+}
+
+.message-head .meta {
+  margin-top: 0;
+}
+
+.message-body {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.message-body p {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+
+.message-delete-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 4px;
+  background: transparent;
+  color: #9ca3af;
+  border-radius: 6px;
+}
+
+.message-delete-btn:hover:not(:disabled) {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.message-delete-btn:disabled {
+  opacity: 0.5;
 }
 
 .participants-list {
