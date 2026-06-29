@@ -12,19 +12,13 @@ interface RequestOptions {
   body?: string | FormData | URLSearchParams;
 }
 
-const BASE_URL = "http://localhost:8000/api/v1";
+const API_PREFIX = "/api/v1";
+const BASE_URL = `${import.meta.env.VITE_API_SCHEME ?? "http"}://${import.meta.env.VITE_API_HOST ?? "localhost"}:${import.meta.env.VITE_API_PORT ?? ""}${API_PREFIX}`;
 
-function parseErrorMessage(
-  errorData: ApiErrorBody,
-  status: number,
-): string {
+function parseErrorMessage(errorData: ApiErrorBody, status: number): string {
   const detailMessage = errorData.detail?.[0]?.msg;
 
-  return (
-    errorData.message ||
-    detailMessage ||
-    `Ошибка HTTP: ${status}`
-  );
+  return errorData.message || detailMessage || `Ошибка HTTP: ${status}`;
 }
 
 export const apiClient = {
@@ -48,7 +42,9 @@ export const apiClient = {
       }
 
       if (!response.ok) {
-        const errorData = (await response.json().catch(() => ({}))) as ApiErrorBody;
+        const errorData = (await response
+          .json()
+          .catch(() => ({}))) as ApiErrorBody;
         throw new Error(parseErrorMessage(errorData, response.status));
       }
 
@@ -63,35 +59,50 @@ export const apiClient = {
     }
   },
 
-  get<T = unknown>(endpoint: string, options: RequestOptions = {}): Promise<T | null> {
+  get<T = unknown>(
+    endpoint: string,
+    options: RequestOptions = {},
+  ): Promise<T | null> {
     return this.request<T>(endpoint, {
       ...options,
       method: "GET",
     });
   },
 
-  post<T = unknown>(endpoint: string, options: RequestOptions = {}): Promise<T | null> {
+  post<T = unknown>(
+    endpoint: string,
+    options: RequestOptions = {},
+  ): Promise<T | null> {
     return this.request<T>(endpoint, {
       ...options,
       method: "POST",
     });
   },
 
-  put<T = unknown>(endpoint: string, options: RequestOptions = {}): Promise<T | null> {
+  put<T = unknown>(
+    endpoint: string,
+    options: RequestOptions = {},
+  ): Promise<T | null> {
     return this.request<T>(endpoint, {
       ...options,
       method: "PUT",
     });
   },
 
-  patch<T = unknown>(endpoint: string, options: RequestOptions = {}): Promise<T | null> {
+  patch<T = unknown>(
+    endpoint: string,
+    options: RequestOptions = {},
+  ): Promise<T | null> {
     return this.request<T>(endpoint, {
       ...options,
       method: "PATCH",
     });
   },
 
-  delete<T = unknown>(endpoint: string, options: RequestOptions = {}): Promise<T | null> {
+  delete<T = unknown>(
+    endpoint: string,
+    options: RequestOptions = {},
+  ): Promise<T | null> {
     return this.request<T>(endpoint, {
       ...options,
       method: "DELETE",

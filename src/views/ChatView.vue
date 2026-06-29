@@ -65,7 +65,9 @@ const {
 
 const chatId = computed(() => String(route.params.id));
 
-const ws = new WebSocket(`ws://localhost:8000/api/v1/chats/${chatId.value}/ws`);
+const ws = new WebSocket(
+  `ws://${import.meta.env.VITE_API_HOST ?? "localhost"}:${import.meta.env.VITE_API_PORT ?? ""}/api/v1/chats/${chatId.value}/ws`,
+);
 
 ws.onmessage = (event: MessageEvent<string>) => {
   const data = JSON.parse(event.data) as ChatWebSocketPayload;
@@ -83,7 +85,6 @@ ws.onmessage = (event: MessageEvent<string>) => {
   }
 
   if (data.event === "left_user" || data.event === "joined_user") {
-    console.log(data.payload);
     messages.value = [
       ...messages.value,
       {
