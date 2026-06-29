@@ -103,6 +103,16 @@ ws.onmessage = (event: MessageEvent<string>) => {
     }
     scrollToBottom();
   }
+
+  if (data.event === "connect_user") {
+    chat.value?.online_members.push(data.payload as number);
+  }
+
+  if (data.event === "disconnect_user" && chat.value) {
+    chat.value.online_members = chat.value.online_members.filter(
+      (item) => item !== data.payload,
+    );
+  }
 };
 
 const isOwner = computed(
@@ -571,6 +581,9 @@ onUnmounted(teardownLoadMoreObserver);
 
       <aside class="card chat-sidebar">
         <h1 class="chat-sidebar-title">{{ chat.name }}</h1>
+        <p class="meta">
+          Сейчас в чате {{ chat.online_members.length }} пользователей.
+        </p>
         <p v-if="chat.total_messages != null" class="meta">
           Всего сообщений: {{ chat.total_messages }}
         </p>
@@ -596,12 +609,22 @@ onUnmounted(teardownLoadMoreObserver);
                 :key="participant.user.id"
                 class="participant-item"
               >
-                <span>
+                <div class="d-flex align-items-center">
+                  <span
+                    class="online-indicator"
+                    :class="[
+                      chat.online_members.includes(participant.user.id)
+                        ? 'online-color'
+                        : 'offline-color',
+                    ]"
+                  ></span>
                   {{ participant.user.username }}
-                  <span v-if="participant.user.id === chat.user_id" class="meta"
+                  <span
+                    v-if="participant.user.id === chat.user_id"
+                    class="member-meta"
                     >(владелец)</span
                   >
-                </span>
+                </div>
                 <button
                   v-if="isOwner && participant.user.id !== chat.user_id"
                   class="danger small"
@@ -644,7 +667,11 @@ onUnmounted(teardownLoadMoreObserver);
               placeholder="Имя пользователя"
               required
             />
-            <button :disabled="participantLoading" type="submit">
+            <button
+              :disabled="participantLoading"
+              type="submit"
+              class="success"
+            >
               {{ participantLoading ? "Добавление..." : "Добавить" }}
             </button>
           </form>

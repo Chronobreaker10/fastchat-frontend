@@ -19,7 +19,13 @@ export interface MessageWithSender {
 }
 
 export interface ChatWebSocketPayload {
-  event: "sent_message" | "left_user" | "joined_user" | "message_deleted";
+  event:
+    | "sent_message"
+    | "left_user"
+    | "joined_user"
+    | "message_deleted"
+    | "connect_user"
+    | "disconnect_user";
   payload: MessageWithSender | string | number;
   details?: ChatMember | string | number;
 }

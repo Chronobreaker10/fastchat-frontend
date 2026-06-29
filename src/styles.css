@@ -1,5 +1,9 @@
 :root {
-  font-family: Inter, Segoe UI, Arial, sans-serif;
+  font-family:
+    Inter,
+    Segoe UI,
+    Arial,
+    sans-serif;
   color: #1f2937;
   background: #f3f4f6;
 }
@@ -45,6 +49,14 @@ button.secondary,
 
 button.danger {
   background: #dc2626;
+}
+
+button.info {
+  background: #0dcaf0;
+}
+
+button.success {
+  background: #198754;
 }
 
 button.small {
@@ -406,4 +418,33 @@ label {
 
 a {
   color: #1d4ed8;
+}
+
+.online-indicator {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 8px;
+}
+
+.d-flex {
+  display: flex;
+}
+
+.align-items-center {
+  align-items: center;
+}
+
+.online-color {
+  background: #22c55e;
+}
+
+.offline-color {
+  background: #a2a4a7;
+}
+
+.member-meta {
+  margin-left: 4px;
+  font-size: 12px;
+  color: #6b7280;
 }

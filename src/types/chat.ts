@@ -20,6 +20,7 @@ export interface ChatRead {
   messages: MessageWithSender[];
   total_messages: number;
   members: ChatMember[];
+  online_members: number[];
 }
 
 export interface CreateChatRequest {

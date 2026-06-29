@@ -85,7 +85,7 @@ onMounted(loadChats);
           minlength="3"
           maxlength="100"
         />
-        <button :disabled="createLoading" type="submit">
+        <button :disabled="createLoading" type="submit" class="success">
           {{ createLoading ? "Создание..." : "Создать" }}
         </button>
       </form>
