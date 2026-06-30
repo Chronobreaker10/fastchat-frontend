@@ -115,6 +115,10 @@ ws.onmessage = (event: MessageEvent<string>) => {
   }
 };
 
+ws.onclose = () => {
+  console.log("WebSocket connection closed!");
+};
+
 const isOwner = computed(
   () =>
     chat.value != null &&
@@ -453,7 +457,10 @@ watch(hasMoreOlder, (hasMore) => {
 });
 
 onMounted(loadChat);
-onUnmounted(teardownLoadMoreObserver);
+onUnmounted(() => {
+  ws.close();
+  teardownLoadMoreObserver();
+});
 </script>
 
 <template>
