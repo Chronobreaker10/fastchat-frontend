@@ -54,4 +54,12 @@ export const authApi = {
   async logout(): Promise<ApiResponse | null> {
     return apiClient.post<ApiResponse>("/auth/logout");
   },
+
+  async refreshTokens(): Promise<AuthResponse> {
+    const response = await apiClient.post<AuthResponse>("/auth/refresh");
+    if (!response) {
+      throw new Error("Не удалось обновить токены");
+    }
+    return response;
+  },
 };

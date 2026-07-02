@@ -1,4 +1,5 @@
-import { clearCurrentUser } from "../store/session";
+import { clearCurrentUser, setExpired, sessionState } from "../store/session";
+import router from "../router";
 
 interface ApiErrorBody {
   message?: string;
@@ -35,10 +36,30 @@ export const apiClient = {
     };
 
     try {
-      const response = await fetch(url, optionsWithDefaults);
+      let response = await fetch(url, optionsWithDefaults);
 
       if (response.status === 401) {
-        clearCurrentUser();
+        if (!sessionState.expired) {
+          const refreshResponse = await fetch(`${BASE_URL}/auth/refresh`, {
+            ...optionsWithDefaults,
+            method: "POST",
+          });
+          if (refreshResponse.status === 401) {
+            clearCurrentUser();
+            setExpired(true);
+            if (router.currentRoute.value.path !== "/login") {
+              await router.push("/login");
+            }
+            throw new Error("Время сессии истекло");
+          }
+          response = await fetch(url, optionsWithDefaults);
+        } else {
+          clearCurrentUser();
+          if (router.currentRoute.value.path !== "/login") {
+            await router.push("/login");
+          }
+          throw new Error("Время сессии истекло");
+        }
       }
 
       if (!response.ok) {

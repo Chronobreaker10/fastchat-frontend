@@ -1,4 +1,8 @@
-import { createRouter, createWebHistory, type RouteLocationNormalized } from "vue-router";
+import {
+  createRouter,
+  createWebHistory,
+  type RouteLocationNormalized,
+} from "vue-router";
 
 import { authApi } from "./api/auth";
 import ChatView from "./views/ChatView.vue";
@@ -25,7 +29,7 @@ const router = createRouter({
 });
 
 router.beforeEach(async (to: RouteLocationNormalized) => {
-  if (!sessionState.currentUser) {
+  if (!sessionState.currentUser && !sessionState.expired) {
     try {
       const user = await authApi.getCurrentUser();
       setCurrentUser(user);
