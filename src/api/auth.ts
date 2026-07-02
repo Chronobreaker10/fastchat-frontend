@@ -52,7 +52,7 @@ export const authApi = {
   },
 
   async logout(): Promise<ApiResponse | null> {
-    return apiClient.post<ApiResponse>("/auth/logout");
+    return apiClient.delete<ApiResponse>("/auth/logout");
   },
 
   async refreshTokens(): Promise<AuthResponse> {

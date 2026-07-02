@@ -58,7 +58,6 @@ export const apiClient = {
           if (router.currentRoute.value.path !== "/login") {
             await router.push("/login");
           }
-          throw new Error("Время сессии истекло");
         }
       }
 
