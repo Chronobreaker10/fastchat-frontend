@@ -12,6 +12,7 @@ import { RouterLink, useRoute, useRouter } from "vue-router";
 
 import { chatApi } from "../api/chats";
 import { messageApi } from "../api/messages";
+import NotificationsBell from "../components/NotificationsBell.vue";
 import { useAuth } from "../composables/useAuth";
 import { useKeyedAsyncAction } from "../composables/useAsyncAction";
 import type { ChatMember, ChatRead } from "../types/chat";
@@ -470,6 +471,7 @@ onUnmounted(() => {
         К списку чатов
       </RouterLink>
       <div class="topbar-actions">
+        <NotificationsBell />
         <span class="username">{{ username }}</span>
         <button class="secondary" type="button" @click="onLogout">Выйти</button>
       </div>

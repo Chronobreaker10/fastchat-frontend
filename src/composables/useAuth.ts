@@ -1,6 +1,7 @@
 import { useRouter } from "vue-router";
 
 import { authApi } from "../api/auth";
+import { clearNotifications } from "../store/notifications";
 import { clearCurrentUser, setCurrentUser } from "../store/session";
 import type { LoginRequest, RegisterRequest } from "../types/auth";
 import { getErrorMessage } from "../utils/errors";
@@ -24,6 +25,7 @@ export function useAuth() {
 
     try {
       clearCurrentUser();
+      clearNotifications();
       await authApi.logout();
       await router.push("/login");
     } catch (error) {

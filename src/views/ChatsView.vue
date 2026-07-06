@@ -3,6 +3,7 @@ import { onMounted, reactive, ref } from "vue";
 import { RouterLink } from "vue-router";
 
 import { chatApi } from "../api/chats";
+import NotificationsBell from "../components/NotificationsBell.vue";
 import { useAuth } from "../composables/useAuth";
 import { useAsyncAction } from "../composables/useAsyncAction";
 import type { Chat } from "../types/chat";
@@ -70,6 +71,7 @@ onMounted(loadChats);
     <header class="topbar card">
       <h1>Мои чаты</h1>
       <div class="topbar-actions">
+        <NotificationsBell />
         <span class="username">{{ username }}</span>
         <button class="secondary" type="button" @click="onLogout">Выйти</button>
       </div>
