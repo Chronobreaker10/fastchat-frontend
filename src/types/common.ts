@@ -3,6 +3,10 @@ export interface ApiResponse<TDetails = Record<string, unknown>> {
   details: TDetails;
 }
 
+export interface ServiceResponse {
+  success: boolean;
+}
+
 export interface JoinChatDetails {
   chat_id: string;
 }

@@ -67,7 +67,7 @@ const {
 const chatId = computed(() => String(route.params.id));
 
 const ws = new WebSocket(
-  `ws://${import.meta.env.VITE_API_HOST ?? "localhost"}:${import.meta.env.VITE_API_PORT ?? ""}/api/v1/chats/${chatId.value}/ws`,
+  `wss://${import.meta.env.VITE_API_HOST ?? "localhost"}/api/v1/chats/${chatId.value}/ws`,
 );
 
 ws.onmessage = (event: MessageEvent<string>) => {
@@ -114,10 +114,6 @@ ws.onmessage = (event: MessageEvent<string>) => {
       (item) => item !== data.payload,
     );
   }
-};
-
-ws.onclose = () => {
-  console.log("WebSocket connection closed!");
 };
 
 const isOwner = computed(

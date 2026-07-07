@@ -11,9 +11,12 @@ import { apiClient } from "./client";
 
 export const chatApi = {
   async create(data: CreateChatRequest): Promise<ApiResponse<{ id: string }>> {
-    const response = await apiClient.post<ApiResponse<{ id: string }>>("/chats", {
-      body: JSON.stringify(data),
-    });
+    const response = await apiClient.post<ApiResponse<{ id: string }>>(
+      "/api/v1/chats",
+      {
+        body: JSON.stringify(data),
+      },
+    );
 
     if (!response) {
       throw new Error("Не удалось создать чат");
@@ -23,7 +26,7 @@ export const chatApi = {
   },
 
   async getMyChats(): Promise<Chat[]> {
-    const response = await apiClient.get<Chat[]>("/chats");
+    const response = await apiClient.get<Chat[]>("/api/v1/chats");
 
     if (!response) {
       throw new Error("Не удалось загрузить список чатов");
@@ -33,7 +36,7 @@ export const chatApi = {
   },
 
   async getChat(id: string): Promise<ChatRead> {
-    const response = await apiClient.get<ChatRead>(`/chats/${id}`);
+    const response = await apiClient.get<ChatRead>(`/api/v1/chats/${id}`);
 
     if (!response) {
       throw new Error("Не удалось загрузить чат");
@@ -48,7 +51,7 @@ export const chatApi = {
   ): Promise<MessageWithSender[]> {
     const query = new URLSearchParams(params).toString();
     const response = await apiClient.get<MessageWithSender[]>(
-      `/chats/${id}/messages?${query}`,
+      `/api/v1/chats/${id}/messages?${query}`,
     );
 
     if (!response) {
@@ -59,9 +62,12 @@ export const chatApi = {
   },
 
   async inviteToChat(id: string, username: string): Promise<ApiResponse> {
-    const response = await apiClient.post<ApiResponse>(`/chats/${id}/members`, {
-      body: JSON.stringify({ username }),
-    });
+    const response = await apiClient.post<ApiResponse>(
+      `/api/v1/chats/${id}/members`,
+      {
+        body: JSON.stringify({ username }),
+      },
+    );
 
     if (!response) {
       throw new Error("Не удалось добавить участника");
@@ -71,7 +77,9 @@ export const chatApi = {
   },
 
   async getInviteToken(id: string): Promise<InviteResponse> {
-    const response = await apiClient.get<InviteResponse>(`/chats/${id}/invite`);
+    const response = await apiClient.get<InviteResponse>(
+      `/api/v1/chats/${id}/invite`,
+    );
 
     if (!response) {
       throw new Error("Не удалось получить ссылку-приглашение");
@@ -82,7 +90,7 @@ export const chatApi = {
 
   async joinByInvite(token: string): Promise<ApiResponse<{ chat_id: string }>> {
     const response = await apiClient.post<ApiResponse<{ chat_id: string }>>(
-      "/chats/invite",
+      "/api/v1/chats/invite",
       {
         body: JSON.stringify({ invite_token: token }),
       },
@@ -96,12 +104,12 @@ export const chatApi = {
   },
 
   async leaveChat(id: string): Promise<ApiResponse | null> {
-    return apiClient.delete<ApiResponse>(`/chats/${id}/members`);
+    return apiClient.delete<ApiResponse>(`/api/v1/chats/${id}/members`);
   },
 
   async kickMember(id: string, userId: number): Promise<ApiResponse> {
     const response = await apiClient.delete<ApiResponse>(
-      `/chats/${id}/members/${userId}`,
+      `/api/v1/chats/${id}/members/${userId}`,
     );
 
     if (!response) {
@@ -112,6 +120,6 @@ export const chatApi = {
   },
 
   async deleteChat(id: string): Promise<ApiResponse | null> {
-    return apiClient.delete<ApiResponse>(`/chats/${id}`);
+    return apiClient.delete<ApiResponse>(`/api/v1/chats/${id}`);
   },
 };

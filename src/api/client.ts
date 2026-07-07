@@ -13,8 +13,7 @@ interface RequestOptions {
   body?: string | FormData | URLSearchParams;
 }
 
-const API_PREFIX = "/api/v1";
-const BASE_URL = `${import.meta.env.VITE_API_SCHEME ?? "http"}://${import.meta.env.VITE_API_HOST ?? "localhost"}:${import.meta.env.VITE_API_PORT ?? ""}${API_PREFIX}`;
+const BASE_URL = `https://${import.meta.env.VITE_API_HOST ?? "localhost"}`;
 
 function parseErrorMessage(errorData: ApiErrorBody, status: number): string {
   const detailMessage = errorData.detail?.[0]?.msg;
@@ -40,10 +39,13 @@ export const apiClient = {
 
       if (response.status === 401) {
         if (!sessionState.expired) {
-          const refreshResponse = await fetch(`${BASE_URL}/auth/refresh`, {
-            ...optionsWithDefaults,
-            method: "POST",
-          });
+          const refreshResponse = await fetch(
+            `${BASE_URL}/api/v1/auth/refresh`,
+            {
+              ...optionsWithDefaults,
+              method: "POST",
+            },
+          );
           if (refreshResponse.status === 401) {
             clearCurrentUser();
             setExpired(true);

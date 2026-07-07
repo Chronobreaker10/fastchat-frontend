@@ -8,7 +8,7 @@ export const messageApi = {
     data: CreateMessageRequest,
   ): Promise<ApiResponse<SendMessageDetails>> {
     const response = await apiClient.post<ApiResponse<SendMessageDetails>>(
-      "/messages",
+      "/api/v1/messages",
       {
         body: JSON.stringify(data),
       },
@@ -22,6 +22,6 @@ export const messageApi = {
   },
 
   async delete(id: number): Promise<void> {
-    await apiClient.delete(`/messages/${id}`);
+    await apiClient.delete(`/api/v1/messages/${id}`);
   },
 };

@@ -15,7 +15,7 @@ export const authApi = {
     formData.append("username", credentials.username);
     formData.append("password", credentials.password);
 
-    const response = await apiClient.post<AuthResponse>("/auth/token", {
+    const response = await apiClient.post<AuthResponse>("/api/v1/auth/token", {
       body: formData,
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
@@ -30,9 +30,12 @@ export const authApi = {
   },
 
   async register(data: RegisterRequest): Promise<ApiResponse> {
-    const response = await apiClient.post<ApiResponse>("/auth/register", {
-      body: JSON.stringify(data),
-    });
+    const response = await apiClient.post<ApiResponse>(
+      "/api/v1/auth/register",
+      {
+        body: JSON.stringify(data),
+      },
+    );
 
     if (!response) {
       throw new Error("Не удалось зарегистрироваться");
@@ -42,7 +45,7 @@ export const authApi = {
   },
 
   async getCurrentUser(): Promise<User> {
-    const response = await apiClient.get<User>("/users/me");
+    const response = await apiClient.get<User>("/api/v1/users/me");
 
     if (!response) {
       throw new Error("Не удалось получить данные пользователя");
@@ -52,11 +55,11 @@ export const authApi = {
   },
 
   async logout(): Promise<ApiResponse | null> {
-    return apiClient.delete<ApiResponse>("/auth/logout");
+    return apiClient.delete<ApiResponse>("/api/v1/auth/logout");
   },
 
   async refreshTokens(): Promise<AuthResponse> {
-    const response = await apiClient.post<AuthResponse>("/auth/refresh");
+    const response = await apiClient.post<AuthResponse>("/api/v1/auth/refresh");
     if (!response) {
       throw new Error("Не удалось обновить токены");
     }

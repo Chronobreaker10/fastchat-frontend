@@ -29,7 +29,7 @@ const rootRef = ref<HTMLElement | null>(null);
 const markingAsReadIds = ref<Set<string>>(new Set());
 
 const eventSource = new EventSource(
-  "http://localhost:8001/notifications/events",
+  `https://${import.meta.env.VITE_API_HOST ?? "localhost"}/service/notifications/events`,
   {
     withCredentials: true,
   },
