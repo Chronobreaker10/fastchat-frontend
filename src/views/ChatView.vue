@@ -83,64 +83,77 @@ const ws = new WebSocket(
 ws.onmessage = (event: MessageEvent<string>) => {
   const data = JSON.parse(event.data) as ChatWebSocketPayload;
 
-  if (data.event === "message_deleted") {
-    messages.value = messages.value.filter(
-      (message) => message.id !== data.payload,
-    );
-    return;
-  }
-
-  if (data.event === "message_updated") {
-    const updatedMessage = data.payload as MessagePayload;
-    messages.value = messages.value.map((message) =>
-      message.id === updatedMessage.message.id
-        ? { ...message, text: updatedMessage.message.text }
-        : message,
-    );
-    return;
-  }
-
-  if (data.event === "sent_message") {
-    const newMessage = data.payload as MessagePayload;
-    const index = messages.value.findIndex(
-      (item) => item.temp_id === newMessage.temp_id,
-    );
-    if (index !== -1) {
-      messages.value[index] = newMessage.message;
-    } else {
-      messages.value.push(newMessage.message);
-      scrollToBottom();
-    }
-  }
-
-  if (data.event === "left_user" || data.event === "joined_user") {
-    messages.value = [
-      ...messages.value,
-      {
-        text: data.payload as string,
-        created_at: new Date().toISOString(),
-        is_system: true,
-      },
-    ];
-    if (data.event === "left_user" && chat.value) {
-      chat.value.members = chat.value.members.filter(
-        (member) => member.user.id !== data.details,
+  switch (data.event) {
+    case "message_deleted": {
+      messages.value = messages.value.filter(
+        (message) => message.id !== data.payload,
       );
+      break;
     }
-    if (data.event === "joined_user") {
-      chat.value?.members.push(data.details as ChatMember);
+    case "message_updated": {
+      const updatedMessage = data.payload as MessagePayload;
+      messages.value = messages.value.map((message) =>
+        message.id === updatedMessage.message.id
+          ? { ...message, text: updatedMessage.message.text }
+          : message,
+      );
+      break;
     }
-    scrollToBottom();
-  }
-
-  if (data.event === "connect_user") {
-    chat.value?.online_members.push(data.payload as number);
-  }
-
-  if (data.event === "disconnect_user" && chat.value) {
-    chat.value.online_members = chat.value.online_members.filter(
-      (item) => item !== data.payload,
-    );
+    case "sent_message": {
+      const newMessage = data.payload as MessagePayload;
+      const index = messages.value.findIndex(
+        (item) => item.temp_id === newMessage.temp_id,
+      );
+      if (index !== -1) {
+        messages.value[index] = newMessage.message;
+      } else {
+        messages.value.push(newMessage.message);
+        scrollToBottom();
+      }
+      break;
+    }
+    case "left_user":
+    case "joined_user": {
+      messages.value = [
+        ...messages.value,
+        {
+          text: data.payload as string,
+          created_at: new Date().toISOString(),
+          is_system: true,
+        },
+      ];
+      if (data.event === "left_user" && chat.value) {
+        chat.value.members = chat.value.members.filter(
+          (member) => member.user.id !== data.details,
+        );
+      }
+      if (data.event === "joined_user") {
+        chat.value?.members.push(data.details as ChatMember);
+      }
+      scrollToBottom();
+      break;
+    }
+    case "connect_user":
+      chat.value?.online_members.push(data.payload as number);
+      break;
+    case "disconnect_user": {
+      if (chat.value) {
+        chat.value.online_members = chat.value.online_members.filter(
+          (item) => item !== data.payload,
+        );
+      }
+      break;
+    }
+    case "read_message": {
+      const messageIds = data.payload as number[];
+      console.log(messages.value);
+      messages.value = messages.value.map((message) =>
+        message.id && messageIds.includes(message.id)
+          ? { ...message, message_status: "READ" }
+          : message,
+      );
+      break;
+    }
   }
 };
 
@@ -568,37 +581,22 @@ onUnmounted(() => {
 
     <div v-else-if="chat" class="chat-layout">
       <section class="card chat-messages-panel">
-        <div
-          ref="messagesScrollRef"
-          class="messages-scroll"
-          @scroll.passive="onMessagesScroll"
-        >
-          <div
-            v-if="hasMoreOlder && initialScrollDone"
-            class="messages-scroll-top"
-          >
+        <div ref="messagesScrollRef" class="messages-scroll" @scroll.passive="onMessagesScroll">
+          <div v-if="hasMoreOlder && initialScrollDone" class="messages-scroll-top">
             <p v-if="loadingOlder" class="messages-load-more">
               Загрузка старых сообщений...
             </p>
             <p v-else class="messages-load-more meta">
               Прокрутите вверх, чтобы загрузить более ранние сообщения
             </p>
-            <div
-              ref="loadMoreSentinelRef"
-              class="load-more-sentinel"
-              aria-hidden="true"
-            />
+            <div ref="loadMoreSentinelRef" class="load-more-sentinel" aria-hidden="true" />
           </div>
 
           <ul class="messages">
             <li v-if="messages.length === 0" class="meta messages-empty">
               Сообщений пока нет.
             </li>
-            <li
-              v-for="message in messages"
-              :key="message.id ?? message.created_at"
-              class="message-item"
-            >
+            <li v-for="message in messages" :key="message.id ?? message.created_at" class="message-item">
               <div class="message-head">
                 <strong v-if="!message.is_system">{{
                   message.sender?.username
@@ -608,121 +606,62 @@ onUnmounted(() => {
                 }}</span>
               </div>
               <div class="message-body">
-                <form
-                  v-if="editingMessageId === message.id"
-                  class="message-edit-form"
-                  @submit.prevent="onSaveEdit(message.id!)"
-                >
-                  <input
-                    v-model="editText"
-                    required
-                    :disabled="editMessageLoadingById[message.id!]"
-                  />
+                <form v-if="editingMessageId === message.id" class="message-edit-form"
+                  @submit.prevent="onSaveEdit(message.id!)">
+                  <input v-model="editText" required :disabled="editMessageLoadingById[message.id!]" />
                   <div class="message-edit-actions">
-                    <button
-                      type="submit"
-                      class="small"
-                      :disabled="editMessageLoadingById[message.id!]"
-                    >
+                    <button type="submit" class="small" :disabled="editMessageLoadingById[message.id!]">
                       {{
                         editMessageLoadingById[message.id!]
                           ? "Сохранение..."
                           : "Сохранить"
                       }}
                     </button>
-                    <button
-                      type="button"
-                      class="secondary small"
-                      :disabled="editMessageLoadingById[message.id!]"
-                      @click="onCancelEdit"
-                    >
+                    <button type="button" class="secondary small" :disabled="editMessageLoadingById[message.id!]"
+                      @click="onCancelEdit">
                       Отмена
                     </button>
                   </div>
                 </form>
                 <template v-else>
                   <p>{{ message.text }}</p>
-                  <div
-                    v-if="canEditMessage(message) && message.id != null"
-                    class="message-actions"
-                  >
-                    <button
-                      type="button"
-                      class="message-edit-btn"
-                      :disabled="editMessageLoadingById[message.id]"
-                      title="Редактировать сообщение"
-                      aria-label="Редактировать сообщение"
-                      @click="onStartEdit(message)"
-                    >
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        width="14"
-                        height="14"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        aria-hidden="true"
-                      >
-                        <path
-                          d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"
-                        />
-                        <path
-                          d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"
-                        />
+                  <div v-if="canEditMessage(message) && message.id != null" class="message-actions">
+                    <button type="button" class="message-edit-btn" :disabled="editMessageLoadingById[message.id]"
+                      title="Редактировать сообщение" aria-label="Редактировать сообщение"
+                      @click="onStartEdit(message)">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                        aria-hidden="true">
+                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
                       </svg>
                     </button>
-                    <button
-                      type="button"
-                      class="message-delete-btn"
-                      :disabled="deleteMessageLoadingById[message.id]"
-                      :title="
-                        deleteMessageLoadingById[message.id]
-                          ? 'Удаление...'
-                          : 'Удалить сообщение'
-                      "
-                      :aria-label="
-                        deleteMessageLoadingById[message.id]
+                    <button type="button" class="message-delete-btn" :disabled="deleteMessageLoadingById[message.id]"
+                      :title="deleteMessageLoadingById[message.id]
+                        ? 'Удаление...'
+                        : 'Удалить сообщение'
+                        " :aria-label="deleteMessageLoadingById[message.id]
                           ? 'Удаление сообщения'
                           : 'Удалить сообщение'
-                      "
-                      @click="onDeleteMessage(message.id)"
-                    >
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        width="14"
-                        height="14"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        aria-hidden="true"
-                      >
+                          " @click="onDeleteMessage(message.id)">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                        aria-hidden="true">
                         <polyline points="3 6 5 6 21 6" />
-                        <path
-                          d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"
-                        />
+                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
                       </svg>
                     </button>
                   </div>
                 </template>
               </div>
               <div class="message-foot">
-                <MessageStatusIndicator :status="message.message_status" />
+                <MessageStatusIndicator v-if="message.message_status" :status="message.message_status" />
               </div>
             </li>
           </ul>
         </div>
         <form class="message-compose" @submit.prevent="onSendMessage">
-          <input
-            v-model="messageText"
-            placeholder="Введите сообщение..."
-            required
-          />
+          <input v-model="messageText" placeholder="Введите сообщение..." required />
           <button :disabled="sendLoading" type="submit">
             {{ sendLoading ? "Отправка..." : "Отправить" }}
           </button>
@@ -751,49 +690,25 @@ onUnmounted(() => {
         </p>
 
         <div class="sidebar-section">
-          <button
-            type="button"
-            class="collapsible-toggle"
-            :aria-expanded="participantsExpanded"
-            @click="participantsExpanded = !participantsExpanded"
-          >
+          <button type="button" class="collapsible-toggle" :aria-expanded="participantsExpanded"
+            @click="participantsExpanded = !participantsExpanded">
             <span>Участники ({{ chat.members.length }})</span>
-            <span
-              class="collapsible-chevron"
-              :class="{ expanded: participantsExpanded }"
-              >▼</span
-            >
+            <span class="collapsible-chevron" :class="{ expanded: participantsExpanded }">▼</span>
           </button>
           <div v-show="participantsExpanded" class="collapsible-body">
             <ul class="participants-list">
-              <li
-                v-for="participant in chat.members"
-                :key="participant.user.id"
-                class="participant-item"
-              >
+              <li v-for="participant in chat.members" :key="participant.user.id" class="participant-item">
                 <div class="d-flex align-items-center">
-                  <span
-                    class="online-indicator"
-                    :class="[
-                      chat.online_members.includes(participant.user.id)
-                        ? 'online-color'
-                        : 'offline-color',
-                    ]"
-                  ></span>
+                  <span class="online-indicator" :class="[
+                    chat.online_members.includes(participant.user.id)
+                      ? 'online-color'
+                      : 'offline-color',
+                  ]"></span>
                   {{ participant.user.username }}
-                  <span
-                    v-if="participant.user.id === chat.user_id"
-                    class="member-meta"
-                    >(владелец)</span
-                  >
+                  <span v-if="participant.user.id === chat.user_id" class="member-meta">(владелец)</span>
                 </div>
-                <button
-                  v-if="isOwner && participant.user.id !== chat.user_id"
-                  class="danger small"
-                  type="button"
-                  :disabled="kickLoadingById[participant.user.id]"
-                  @click="onKickParticipant(participant.user.id)"
-                >
+                <button v-if="isOwner && participant.user.id !== chat.user_id" class="danger small" type="button"
+                  :disabled="kickLoadingById[participant.user.id]" @click="onKickParticipant(participant.user.id)">
                   {{
                     kickLoadingById[participant.user.id]
                       ? "Удаление..."
@@ -809,11 +724,7 @@ onUnmounted(() => {
         <div class="sidebar-section">
           <h2 class="sidebar-heading">Приглашение</h2>
           <div class="invite-row">
-            <button
-              type="button"
-              :disabled="inviteLoading"
-              @click="onCreateInvite"
-            >
+            <button type="button" :disabled="inviteLoading" @click="onCreateInvite">
               {{ inviteLoading ? "Создание..." : "Создать ссылку-приглашение" }}
             </button>
             <input v-if="inviteLink" :value="inviteLink" readonly />
@@ -824,16 +735,8 @@ onUnmounted(() => {
         <div class="sidebar-section">
           <h2 class="sidebar-heading">Добавить участника</h2>
           <form class="sidebar-form" @submit.prevent="onAddParticipant">
-            <input
-              v-model="participantForm.username"
-              placeholder="Имя пользователя"
-              required
-            />
-            <button
-              :disabled="participantLoading"
-              type="submit"
-              class="success"
-            >
+            <input v-model="participantForm.username" placeholder="Имя пользователя" required />
+            <button :disabled="participantLoading" type="submit" class="success">
               {{ participantLoading ? "Добавление..." : "Добавить" }}
             </button>
           </form>
@@ -841,24 +744,14 @@ onUnmounted(() => {
         </div>
 
         <template v-if="isOwner">
-          <button
-            class="danger delete-chat-button"
-            type="button"
-            :disabled="deleteLoading"
-            @click="onDeleteChat"
-          >
+          <button class="danger delete-chat-button" type="button" :disabled="deleteLoading" @click="onDeleteChat">
             {{ deleteLoading ? "Удаление..." : "Удалить чат" }}
           </button>
           <p v-if="deleteError" class="error">{{ deleteError }}</p>
         </template>
 
         <template v-else>
-          <button
-            class="secondary leave-chat-button"
-            type="button"
-            :disabled="leaveLoading"
-            @click="onLeaveChat"
-          >
+          <button class="secondary leave-chat-button" type="button" :disabled="leaveLoading" @click="onLeaveChat">
             {{ leaveLoading ? "Выход..." : "Покинуть чат" }}
           </button>
           <p v-if="leaveError" class="error">{{ leaveError }}</p>

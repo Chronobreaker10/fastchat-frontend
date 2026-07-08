@@ -41,12 +41,17 @@ export interface ChatWebSocketPayload {
     | "joined_user"
     | "message_deleted"
     | "message_updated"
-    | "message_status_updated"
+    | "read_message"
     | "message_delivered"
     | "message_read"
     | "connect_user"
     | "disconnect_user";
-  payload: MessagePayload | MessageStatusUpdatePayload | string | number;
+  payload:
+    | MessagePayload
+    | MessageStatusUpdatePayload
+    | string
+    | number
+    | number[];
   details?: ChatMember | string | number;
 }
 
