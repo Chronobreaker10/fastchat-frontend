@@ -1,0 +1,13 @@
+services:
+  reverse-proxy:
+    build: .
+    container_name: fastchat_proxy
+    ports:
+      - "80:80"
+      - "443:443"
+    networks:
+      - fastchat-net
+
+networks:
+  fastchat-net:
+    external: true

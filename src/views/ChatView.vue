@@ -13,10 +13,15 @@ import { RouterLink, useRoute, useRouter } from "vue-router";
 import { chatApi } from "../api/chats";
 import { messageApi } from "../api/messages";
 import NotificationsBell from "../components/NotificationsBell.vue";
+import MessageStatusIndicator from "../components/MessageStatusIndicator.vue";
 import { useAuth } from "../composables/useAuth";
 import { useKeyedAsyncAction } from "../composables/useAsyncAction";
 import type { ChatMember, ChatRead } from "../types/chat";
-import type { ChatWebSocketPayload, MessageWithSender } from "../types/message";
+import type {
+  ChatWebSocketPayload,
+  MessagePayload,
+  MessageWithSender,
+} from "../types/message";
 import { formatDateTime } from "../utils/format";
 import { getErrorMessage } from "../utils/errors";
 
@@ -55,6 +60,9 @@ const leaveLoading = ref(false);
 const leaveError = ref("");
 const kickError = ref("");
 const deleteMessageError = ref("");
+const editMessageError = ref("");
+const editingMessageId = ref<number | null>(null);
+const editText = ref("");
 const participantsExpanded = ref(false);
 
 const { loadingByKey: kickLoadingById, execute: executeKick } =
@@ -63,6 +71,8 @@ const {
   loadingByKey: deleteMessageLoadingById,
   execute: executeDeleteMessage,
 } = useKeyedAsyncAction();
+const { loadingByKey: editMessageLoadingById, execute: executeEditMessage } =
+  useKeyedAsyncAction();
 
 const chatId = computed(() => String(route.params.id));
 
@@ -80,9 +90,27 @@ ws.onmessage = (event: MessageEvent<string>) => {
     return;
   }
 
+  if (data.event === "message_updated") {
+    const updatedMessage = data.payload as MessagePayload;
+    messages.value = messages.value.map((message) =>
+      message.id === updatedMessage.message.id
+        ? { ...message, text: updatedMessage.message.text }
+        : message,
+    );
+    return;
+  }
+
   if (data.event === "sent_message") {
-    messages.value = [...messages.value, data.payload as MessageWithSender];
-    scrollToBottom();
+    const newMessage = data.payload as MessagePayload;
+    const index = messages.value.findIndex(
+      (item) => item.temp_id === newMessage.temp_id,
+    );
+    if (index !== -1) {
+      messages.value[index] = newMessage.message;
+    } else {
+      messages.value.push(newMessage.message);
+      scrollToBottom();
+    }
   }
 
   if (data.event === "left_user" || data.event === "joined_user") {
@@ -260,6 +288,7 @@ async function loadChat(): Promise<void> {
   hasMoreOlder.value = false;
   initialScrollDone.value = false;
   teardownLoadMoreObserver();
+  onCancelEdit();
   chat.value = null;
 
   try {
@@ -286,18 +315,27 @@ async function onSendMessage(): Promise<void> {
   sendError.value = "";
 
   try {
-    const response = await messageApi.send({
+    const tempId = crypto.randomUUID();
+
+    const newMessage: MessageWithSender = {
+      temp_id: tempId,
+      chat_id: chat.value.id,
+      text: messageText.value,
+      created_at: new Date().toISOString(),
+      sender: currentUser.value ?? undefined,
+      message_status: "SENDING",
+      is_system: false,
+    };
+    messages.value.push(newMessage);
+    await scrollToBottom();
+
+    await messageApi.send({
+      temp_id: tempId,
       chat_id: chat.value.id,
       text: messageText.value,
     });
     messageText.value = "";
-
-    const newMessage: MessageWithSender = {
-      ...response.details.message,
-      sender: currentUser.value ?? undefined,
-    };
-    ws.send(JSON.stringify(newMessage));
-    await scrollToBottom();
+    //ws.send(JSON.stringify(newMessage));
   } catch (error) {
     sendError.value = getErrorMessage(error);
   } finally {
@@ -381,11 +419,58 @@ async function onLeaveChat(): Promise<void> {
   }
 }
 
-function canDeleteMessage(message: MessageWithSender): boolean {
+function canEditMessage(message: MessageWithSender): boolean {
   return (
     !message.is_system &&
     message.id != null &&
     message.sender?.id === currentUser.value?.id
+  );
+}
+
+function onStartEdit(message: MessageWithSender): void {
+  if (message.id == null) {
+    return;
+  }
+
+  editMessageError.value = "";
+  editingMessageId.value = message.id;
+  editText.value = message.text;
+}
+
+function onCancelEdit(): void {
+  editingMessageId.value = null;
+  editText.value = "";
+  editMessageError.value = "";
+}
+
+async function onSaveEdit(messageId: number): Promise<void> {
+  const trimmedText = editText.value.trim();
+
+  if (!trimmedText) {
+    editMessageError.value = "Текст сообщения не может быть пустым.";
+    return;
+  }
+
+  editMessageError.value = "";
+
+  await executeEditMessage(
+    messageId,
+    async () => {
+      const response = await messageApi.update(messageId, {
+        text: trimmedText,
+      });
+      const updatedMessage = response.details.message;
+
+      messages.value = messages.value.map((message) =>
+        message.id === messageId
+          ? { ...message, text: updatedMessage.text }
+          : message,
+      );
+      onCancelEdit();
+    },
+    (message) => {
+      editMessageError.value = message;
+    },
   );
 }
 
@@ -523,42 +608,111 @@ onUnmounted(() => {
                 }}</span>
               </div>
               <div class="message-body">
-                <p>{{ message.text }}</p>
-                <button
-                  v-if="canDeleteMessage(message) && message.id != null"
-                  type="button"
-                  class="message-delete-btn"
-                  :disabled="deleteMessageLoadingById[message.id]"
-                  :title="
-                    deleteMessageLoadingById[message.id]
-                      ? 'Удаление...'
-                      : 'Удалить сообщение'
-                  "
-                  :aria-label="
-                    deleteMessageLoadingById[message.id]
-                      ? 'Удаление сообщения'
-                      : 'Удалить сообщение'
-                  "
-                  @click="onDeleteMessage(message.id)"
+                <form
+                  v-if="editingMessageId === message.id"
+                  class="message-edit-form"
+                  @submit.prevent="onSaveEdit(message.id!)"
                 >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="14"
-                    height="14"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    aria-hidden="true"
+                  <input
+                    v-model="editText"
+                    required
+                    :disabled="editMessageLoadingById[message.id!]"
+                  />
+                  <div class="message-edit-actions">
+                    <button
+                      type="submit"
+                      class="small"
+                      :disabled="editMessageLoadingById[message.id!]"
+                    >
+                      {{
+                        editMessageLoadingById[message.id!]
+                          ? "Сохранение..."
+                          : "Сохранить"
+                      }}
+                    </button>
+                    <button
+                      type="button"
+                      class="secondary small"
+                      :disabled="editMessageLoadingById[message.id!]"
+                      @click="onCancelEdit"
+                    >
+                      Отмена
+                    </button>
+                  </div>
+                </form>
+                <template v-else>
+                  <p>{{ message.text }}</p>
+                  <div
+                    v-if="canEditMessage(message) && message.id != null"
+                    class="message-actions"
                   >
-                    <polyline points="3 6 5 6 21 6" />
-                    <path
-                      d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"
-                    />
-                  </svg>
-                </button>
+                    <button
+                      type="button"
+                      class="message-edit-btn"
+                      :disabled="editMessageLoadingById[message.id]"
+                      title="Редактировать сообщение"
+                      aria-label="Редактировать сообщение"
+                      @click="onStartEdit(message)"
+                    >
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                      >
+                        <path
+                          d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"
+                        />
+                        <path
+                          d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"
+                        />
+                      </svg>
+                    </button>
+                    <button
+                      type="button"
+                      class="message-delete-btn"
+                      :disabled="deleteMessageLoadingById[message.id]"
+                      :title="
+                        deleteMessageLoadingById[message.id]
+                          ? 'Удаление...'
+                          : 'Удалить сообщение'
+                      "
+                      :aria-label="
+                        deleteMessageLoadingById[message.id]
+                          ? 'Удаление сообщения'
+                          : 'Удалить сообщение'
+                      "
+                      @click="onDeleteMessage(message.id)"
+                    >
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                      >
+                        <polyline points="3 6 5 6 21 6" />
+                        <path
+                          d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"
+                        />
+                      </svg>
+                    </button>
+                  </div>
+                </template>
+              </div>
+              <div class="message-foot">
+                <MessageStatusIndicator :status="message.message_status" />
               </div>
             </li>
           </ul>
@@ -581,6 +735,9 @@ onUnmounted(() => {
         </p>
         <p v-if="deleteMessageError" class="error message-compose-error">
           {{ deleteMessageError }}
+        </p>
+        <p v-if="editMessageError" class="error message-compose-error">
+          {{ editMessageError }}
         </p>
       </section>
 

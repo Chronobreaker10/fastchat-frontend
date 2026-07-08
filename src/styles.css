@@ -363,6 +363,32 @@ label {
   margin: 0;
 }
 
+.message-foot {
+  display: flex;
+  justify-content: flex-end;
+  align-self: flex-end;
+  margin-bottom: 8px;
+}
+
+.message-actions {
+  display: inline-flex;
+  flex-shrink: 0;
+  gap: 4px;
+}
+
+.message-edit-form {
+  display: grid;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.message-edit-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.message-edit-btn,
 .message-delete-btn {
   display: inline-flex;
   align-items: center;
@@ -374,11 +400,17 @@ label {
   border-radius: 6px;
 }
 
+.message-edit-btn:hover:not(:disabled) {
+  background: #dbeafe;
+  color: #2563eb;
+}
+
 .message-delete-btn:hover:not(:disabled) {
   background: #fee2e2;
   color: #dc2626;
 }
 
+.message-edit-btn:disabled,
 .message-delete-btn:disabled {
   opacity: 0.5;
 }

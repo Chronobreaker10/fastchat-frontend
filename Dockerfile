@@ -7,8 +7,9 @@ COPY . .
 RUN npm run build
 
 # Этап production — nginx
-FROM nginx:stable-alpine
+FROM nginx:1.31.2
 COPY --from=build /app/dist /usr/share/nginx/html
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY nginx.conf /etc/nginx/nginx.conf
+COPY certs /certs
 EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]
