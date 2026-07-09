@@ -1,5 +1,8 @@
 import type { ApiResponse, SendMessageDetails } from "../types/common";
-import type { CreateMessageRequest, UpdateMessageRequest } from "../types/message";
+import type {
+  CreateMessageRequest,
+  UpdateMessageRequest,
+} from "../types/message";
 
 import { apiClient } from "./client";
 

@@ -15,14 +15,33 @@ const label = MESSAGE_STATUS_LABELS[resolvedStatus.value];
 </script>
 
 <template>
-  <span class="message-status" :class="`message-status-${resolvedStatus}`" :title="label" :aria-label="label">
-    <span v-if="resolvedStatus === 'SENDING'" class="message-status-spinner" aria-hidden="true" />
+  <span
+    class="message-status"
+    :class="`message-status-${resolvedStatus}`"
+    :title="label"
+    :aria-label="label"
+  >
+    <span
+      v-if="resolvedStatus === 'SENDING'"
+      class="message-status-spinner"
+      aria-hidden="true"
+    />
 
-    <svg v-else-if="resolvedStatus === 'DELIVERED'" class="message-status-icon" viewBox="0 0 16 16" aria-hidden="true">
+    <svg
+      v-else-if="resolvedStatus === 'DELIVERED'"
+      class="message-status-icon"
+      viewBox="0 0 16 16"
+      aria-hidden="true"
+    >
       <path d="M3 8.5 6.5 12 13 4" />
     </svg>
 
-    <svg v-else class="message-status-icon message-status-icon-double" viewBox="0 0 20 16" aria-hidden="true">
+    <svg
+      v-else
+      class="message-status-icon message-status-icon-double"
+      viewBox="0 0 20 16"
+      aria-hidden="true"
+    >
       <path d="M1 8.5 4.5 12 11 4" />
       <path d="M6 8.5 9.5 12 16 4" />
     </svg>
